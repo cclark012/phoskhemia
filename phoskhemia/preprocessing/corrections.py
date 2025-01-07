@@ -1,4 +1,5 @@
 import numpy as np
+import scipy as sp
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 from scipy.linalg import cholesky
@@ -173,3 +174,107 @@ def als(
 
     return background
 
+
+def find_time_zero(
+        original_times: np.typing.ArrayLike,
+        original_data: np.typing.ArrayLike,
+        printing: int=0,
+    ) -> tuple[np.typing.ArrayLike, np.typing.ArrayLike]:
+
+    """
+    Finds the time zero of a transient absorption spectrum 
+    by finding the inflection point of the rising signal.
+    The inflection point is found for each wavelength, then
+    the median value is used to shift the data array.
+
+    Args:
+        original_times (np.typing.ArrayLike): The time axis with negative times.
+        original_data (np.typing.ArrayLike): The data array with negative time values. 
+        printing (int): How much information should be printed. 0 disables printing, 
+            1 prints the final result, and 2 prints all intermediate results. 
+            Defaults to 0.
+
+    Returns:
+        tuple[np.typing.ArrayLike, np.typing.ArrayLike]: The truncated/extended 
+            time axis and shifted data array.
+    """
+
+    SMOOTH_RANGE: int = 50
+    TRUNC_RANGE: int = 20
+
+    time_zero: int = np.argmin(np.abs(original_times))
+    time_range: np.typing.ArrayLike = original_times[
+        time_zero - SMOOTH_RANGE:time_zero + SMOOTH_RANGE
+    ]
+
+    truncated_window: np.typing.ArrayLike = time_range[
+        np.logical_and(time_range >= -TRUNC_RANGE, time_range <= TRUNC_RANGE)
+    ]
+    new_time_zeros: list[float] = []
+
+    # Determine inflection point for each wavelength.
+    for i in range(0, len(original_data[0, :])):
+        original_series: np.typing.ArrayLike = original_data[
+            time_zero - SMOOTH_RANGE:time_zero + SMOOTH_RANGE, i
+        ]
+
+        # Make smoothing spline for first and second derivatives.
+        series = sp.interpolate.make_smoothing_spline(time_range, original_series)
+
+        # First derivative to find inflection point (relative maxima).
+        first_derivative: np.typing.ArrayLike = series.derivative(nu=1)(time_range)
+        first_inflection: int = np.argmax(np.abs(
+            first_derivative[np.logical_and(
+                time_range >= -TRUNC_RANGE, time_range <= TRUNC_RANGE
+            )]
+        ))
+        first_new_time_zero: float = truncated_window[first_inflection]
+
+        # Second derivative for inflection point (close to zero).
+        second_derivative: np.typing.ArrayLike = series.derivative(nu=2)(time_range)
+        second_inflection: int = np.argmin(np.abs(
+            second_derivative[np.logical_and(
+                time_range >= -TRUNC_RANGE, time_range <= TRUNC_RANGE
+            )]
+        ))
+        second_new_time_zero: float = truncated_window[second_inflection]
+
+        # Use the smaller index of the obtained inflection points.
+        closer_to_zero: int = (first_inflection, second_inflection)[
+            np.argmin([np.abs(first_new_time_zero), np.abs(second_new_time_zero)])
+        ]
+
+        new_time_zeros += [truncated_window[closer_to_zero]]
+        print(truncated_window[closer_to_zero]) if printing == 2 else None
+
+    # Use the median value of the obtained time zeros to shift the array.
+    time_zero_ns: float = np.median(new_time_zeros)
+    delta_t: float = original_times[1:] - original_times[:-1]
+
+    # Shift array values, but leave time axis where it is.
+    shift_value: int = int(time_zero_ns // np.unique(delta_t)[0])
+    data: np.typing.ArrayLike = original_data[time_zero + shift_value:, :]
+
+    # Truncate or extend the time axis.
+    if shift_value >= 0:
+        times: np.typing.ArrayLike = original_times[time_zero:len(original_data[:, 0])]
+
+    else:
+        times: np.typing.ArrayLike = np.arange(0, len(data[:, 0]) * delta_t, delta_t)
+
+    # Tell user how the data was adjusted if printing enabled.
+    if printing == 1 or printing == 2:
+        print(f"Median = {time_zero_ns} ns. ", end='')
+        if shift_value > 0:
+            print(f"Data shifted backward by {shift_value * delta_t} ns.")
+
+        elif shift_value < 0:
+            print(f"Data shifted forward by {np.abs(shift_value) * delta_t} ns.")
+
+        elif shift_value == 0:
+            print(f"Data was not shifted.")
+
+        else:
+            print(f"Something went wrong. Check the data output.")
+
+    return times, data
