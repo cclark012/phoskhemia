@@ -14,5 +14,8 @@
     "terminal.integrated.fontSize": 14,
     "chat.editor.fontSize": 14,
     "markdown.preview.fontSize": 14,
-    "window.zoomLevel": -1.5
+    "window.zoomLevel": -1.5,
+    "cSpell.words": [
+        "Triexponential"
+    ]
 }
