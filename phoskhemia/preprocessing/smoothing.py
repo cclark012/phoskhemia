@@ -8,7 +8,6 @@ def fourier_gaussian_smooth(
         shape_parameter: float=1, 
         deriv: int=0
     ) -> np.typing.ArrayLike:
-
     """
     Smooths a one-dimensional array by convolution of the array and a Gaussian.
     As the Fourier transform of a Gaussian is another Gaussian, smoothing with
@@ -109,7 +108,6 @@ def average2D(
         m_rows: int=1, 
         n_cols: int=1
     ) -> np.typing.ArrayLike:
-
     """
     Smooths a two-dimensional array with the use of a sliding window. The 
     sliding window is constructed to be 2 * m_rows + 1 rows by 2 * n_cols + 1 columns.
@@ -164,7 +162,6 @@ def downsample2D(
         m_rows: int=1, 
         n_cols: int=1
     ) -> np.typing.ArrayLike:
-
     """
     Downsamples a two-dimensional array by averaging the 2 * p + 1 elements along
     the given rows/columns, where p is the half interval of m_rows or n_cols.
@@ -288,7 +285,6 @@ def average_filter(
         quarter_window: tuple[int, int]=(1, 1), 
         downsampling: str='both'
     ) -> np.typing.ArrayLike:
-
     """
     Composite function consisting of functions defined for smoothing 
     two-dimensional arrays with a sliding window function and 
@@ -437,12 +433,156 @@ def svd_smooth(
 
     return reconstruction
 
+def minmax_eigenvalues(
+        lam: float
+    ) -> tuple[float, float]:
 
-#from rich import print
-#test_array = np.ones((24, 24)) * 8
-#for i in range(2, len(test_array[0, :]) // 2, 2):
-#    test_array[i:-i, i:-i] -= 1
-#print(test_array)
-#array = downsample2D(test_array, m_rows=2, n_cols=2)
-#print(np.shape(array))
-#[print(array[i, :]) for i in range(len(array[:, 0]))]
+    min_eigenvalue = (1 - np.sqrt(lam)) ** 2
+    max_eigenvalue = (1 + np.sqrt(lam)) ** 2
+
+    return min_eigenvalue, max_eigenvalue
+
+def marchenko_pastur_cdf(
+        x: np.typing.ArrayLike,
+        lam: float,
+    ) -> np.typing.ArrayLike:
+    """
+    Computes the Marchenko-Pastur cumulative density function
+    for a chosen lam value using the analytic integral. Specific
+    values of x and lam that cause issues (square root of negative,
+    division by zero) are parsed during evaluation. If a general
+    x array is passed, there may be sharp cut-on and cut-off points
+    seen in the final cdf; these are where the minimum and maximum
+    eigenvalues occur.
+
+    Args:
+        x (np.typing.ArrayLike): Array of input values 
+            for which to compute the CDF.
+        lam (float): Matrix row to column ratio.
+
+    Returns:
+        np.typing.ArrayLike: Resulting cumulative density function.
+    """
+
+    lamminus, lamplus = minmax_eigenvalues(lam)
+    lamprod = (lamplus - x) * (x - lamminus)
+    lamprod[lamprod < 0] = 0
+    sqrt_ab = np.sqrt(lamprod)
+
+    diff_prod = (lamplus * (x - lamminus))
+    fraction1 = np.zeros_like(x)
+    fraction1[diff_prod > 0] = (
+        (lamminus * (lamplus - x[diff_prod > 0])) / diff_prod[diff_prod > 0]
+    )
+
+    inv_tangent1 = 2 * np.sqrt(lamplus * lamminus) * (
+        np.arctan(np.sqrt(
+            fraction1
+        )) - (np.pi / 2)
+    )
+
+    condition = sqrt_ab > 0
+    inv_tangent2 = np.zeros_like(x)
+    inv_tangent2[condition] = ((lamplus + lamminus) / 2) * (
+        (np.arctan(
+            (x[condition] - ((lamplus + lamminus) / 2)) / sqrt_ab[condition]
+        )) + (np.pi / 2)
+    )
+
+    cdf = (1 / (2 * np.pi * lam)) * (
+        inv_tangent1 + inv_tangent2 + sqrt_ab
+    )
+    cdf[cdf < 0] = 0
+
+    return cdf
+
+def median_marchenko_pastur(
+        lam: float,
+    ) -> float:
+
+    lamminus, lamplus = minmax_eigenvalues(lam)
+    x = np.linspace(lamminus, lamplus, 100000)
+    cdf = marchenko_pastur_cdf(x=x, lam=lam)
+    return np.median(cdf)
+
+def lambda_star(
+        lam: float,
+    ) -> float:
+
+    return np.sqrt(
+        2 * (lam + 1) + (
+            (8 * lam) / ((lam + 1) + np.sqrt((lam ** 2) + 14 * lam + 1))
+        )
+    )
+
+def optimal_singular_value_hard_threshold(
+        lam: float,
+        singular_values: np.typing.ArrayLike,
+    ) -> float:
+
+    omega_lam = lambda_star(lam) / np.sqrt(median_marchenko_pastur(lam))
+    threshold = omega_lam * np.median(singular_values)
+
+    return threshold
+
+def smooth_via_OSVHT(
+        array: np.typing.ArrayLike,
+    ) -> np.typing.ArrayLike:
+
+    m_rows, n_cols = array.shape
+    lam = n_cols / m_rows if m_rows > n_cols else m_rows / n_cols
+
+    U, singular_values, Vh = sp.linalg.svd(
+        array, lapack_driver='gesdd', full_matrices=False
+    )
+
+    threshold = optimal_singular_value_hard_threshold(
+        lam=lam, singular_values=singular_values
+    )
+
+    num_components = len(singular_values[singular_values >= threshold])
+
+
+    reconstruction = (
+        U[:, :num_components + 1] 
+        @ np.diag(singular_values[:num_components + 1]) 
+        @ Vh[:num_components + 1, :]
+    )
+
+    print(f"Threshold at {threshold :.5f}. " 
+            f"Used {num_components} singular values, "
+            f"Trimmed {len(singular_values[singular_values < threshold])}"
+            f" singular values.")
+
+    residuals = array - reconstruction
+    nobs, minmax, mean, variance, skew, kurt = sp.stats.describe(residuals.flat)
+    minimum, maximum = minmax
+
+    print(f'{f'Distribution of Residuals from SVD' :-^55}')
+    print(
+        f'| {'Minimum' :<25} {'x̌' :<5}  = {minimum * 1e3 : >{12}.3f} {'mOD' :<4}{'|' :>2}'
+    )
+    print(
+        f'| {'Mean' :<25} {'x̄' :<5}  = {mean * 1e6 : >{12}.3f} {'μOD' :<4}{'|' :>2}'
+    )
+    print(
+        f'| {'Maximum' :<25} {'x̂' :<5}  = {maximum * 1e3 : >{12}.3f} {'mOD' :<4}{'|' :>2}'
+    )
+    print(
+        f'| {'Standard Error of Mean' :<25} {'σₘₑₐₙ' :<5} = {((1 / np.sqrt(nobs)) * np.sqrt(variance)) * 1e6 : >{12}.3f} {'μOD' :<4}{'|' :>2}'
+    )
+    print(
+        f'| {'Standard Deviation' :<25} {'σ' :<5} = {np.sqrt(variance) * 1e6 : >{12}.3f} {'μOD' :<4}{'|' :>2}'
+    )
+    print(
+        f'| {'Variance' :<25} {'σ²' :<5} = {variance * 1e12 : >{12}.3f} {'μOD²' :<4}{'|' :>2}'
+    )
+    print(
+        f'| {'Skew' :<25} {'σ³' :<5} = {skew : >{12}.3f} {'' :<4}{'|' :>2}'
+    )
+    print(
+        f'| {'Kurtosis' :<25} {'σ⁴' :<5} = {kurt : >{12}.3f} {'' :<4}{'|' :>2}'
+    )
+    print(f'{'-' * 55}\n')
+
+    return reconstruction
