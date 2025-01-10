@@ -10,7 +10,6 @@ def arpls(
         ratio: float=0.05, 
         itermax: int=100
     ) -> np.typing.ArrayLike:
-
     """
     Baseline correction using asymmetrically
     reweighted penalized least squares smoothing
@@ -115,7 +114,6 @@ def als(
         ratio: float=0.1, 
         itermax: int=10
     ) -> np.typing.ArrayLike:
-
     """
     Implements an Asymmetric Least Squares Smoothing
     baseline correction algorithm (P. Eilers, H. Boelens 2005)
@@ -174,13 +172,11 @@ def als(
 
     return background
 
-
 def find_time_zero(
         original_times: np.typing.ArrayLike,
         original_data: np.typing.ArrayLike,
         printing: int=0,
     ) -> tuple[np.typing.ArrayLike, np.typing.ArrayLike]:
-
     """
     Finds the time zero of a transient absorption spectrum 
     by finding the inflection point of the rising signal.
@@ -199,6 +195,9 @@ def find_time_zero(
             time axis and shifted data array.
     """
 
+    # Constants to choose how wide of a window to use for general smoothing and
+    # final time zero estimation. Uses that number of indices on either 
+    # side (positive and negative) of the originally notated time zero.
     SMOOTH_RANGE: int = 50
     TRUNC_RANGE: int = 20
 
