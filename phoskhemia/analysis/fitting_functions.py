@@ -1,12 +1,22 @@
 import numpy as np
-from typing import Any
-
-ArrayFloatAny = np.ndarray[Any, np.dtype[np.float[Any]]]
+from utils.typing import ArrayFloatAny
 
 def exponential_decay(
         beta: tuple[float, float, float], 
         t: ArrayFloatAny,
     ) -> ArrayFloatAny:
+    """
+    Monoexponential decay for data fitting.
+
+    Args:
+        beta (tuple[float, float, float]): 3-tuple of decay 
+            time constant, amplitude, and intercept/offset.
+        t (ArrayFloatAny): One-dimensional array of 
+            values to evaluate expression at.
+
+    Returns:
+        ArrayFloatAny: One-dimensional array of values.
+    """
 
     tau1, a1, b = beta
     return a1 * np.exp(-t / tau1) + b
@@ -15,6 +25,18 @@ def biexponential_decay(
         beta: tuple[float, float, float, float, float], 
         t: ArrayFloatAny,
     ) -> ArrayFloatAny:
+    """
+    Biexponential decay for data fitting.
+
+    Args:
+        beta (tuple[float, float, float, float, float]): 5-tuple of decay 
+            time constant 1 and 2, amplitude 1 and 2, and intercept/offset.
+        t (ArrayFloatAny): One-dimensional array of 
+            values to evaluate expression at.
+
+    Returns:
+        ArrayFloatAny: One-dimensional array of values.
+    """
 
     tau1, tau2, a1, a2, b = beta
     return (a1 * np.exp(-t / tau1) 
@@ -25,6 +47,19 @@ def triexponential_decay(
                     float, float, float, float], 
         t: ArrayFloatAny,
     ) -> ArrayFloatAny:
+    """
+    Triexponential decay for data fitting.
+
+    Args:
+        beta (tuple[float, float, float, 
+                    float, float, float, float]): 7-tuple of decay time 
+                    constants 1 - 3, amplitudes 1 - 3, and intercept/offset.
+        t (ArrayFloatAny): One-dimensional array of 
+            values to evaluate expression at.
+
+    Returns:
+        ArrayFloatAny: One-dimensional array of values.
+    """
 
     tau1, tau2, tau3, a1, a2, a3, b = beta
     return (a1 * np.exp(-t / tau1) 
@@ -37,6 +72,20 @@ def tetraexponential_decay(
                     float, float, float], 
         t: ArrayFloatAny,
     ) -> ArrayFloatAny:
+    """
+    Tetraexponential decay for data fitting.
+
+    Args:
+        beta (tuple[float, float, float, 
+                    float, float, float, 
+                    float, float, float]): 9-tuple of decay time 
+                    constants 1 - 4, amplitudes 1 - 4, and intercept/offset.
+        t (ArrayFloatAny): One-dimensional array of 
+            values to evaluate expression at.
+
+    Returns:
+        ArrayFloatAny: One-dimensional array of values.
+    """
 
     tau1, tau2, tau3, tau4, a1, a2, a3, a4, b = beta
     return (a1 * np.exp(-t / tau1) 
@@ -50,6 +99,20 @@ def pentaexponential_decay(
                     float, float, float], 
         t: ArrayFloatAny,
     ) -> ArrayFloatAny:
+    """
+    Pentaexponential decay for data fitting.
+
+    Args:
+        beta (tuple[float, float, float, float, 
+                    float, float, float, float, 
+                    float, float, float]): 11-tuple of decay time 
+                    constants 1 - 5, amplitudes 1 - 5, and intercept/offset.
+        t (ArrayFloatAny): One-dimensional array of 
+            values to evaluate expression at.
+
+    Returns:
+        ArrayFloatAny: One-dimensional array of values.
+    """
 
     tau1, tau2, tau3, tau4, tau5, a1, a2, a3, a4, a5, b = beta
     return (a1 * np.exp(-t / tau1) 
@@ -62,6 +125,21 @@ def n_exponential_decay(
         beta: tuple[float, ...], 
         t: ArrayFloatAny,
     ) -> ArrayFloatAny:
+    """
+    n-exponential decay for data fitting.
+
+    Args:
+        beta (tuple[float, ...]): n-tuple of decay time 
+            constants 1 - n, amplitudes 1 - n, and intercept/offset.
+            If the input list beta is an even number of values, the 
+            intercept value is set to 0, while an odd number of values
+            will have the last value be the intercept.
+        t (ArrayFloatAny): One-dimensional array of 
+            values to evaluate expression at.
+
+    Returns:
+        ArrayFloatAny: One-dimensional array of values.
+    """
 
     if len(beta) % 2 == 0:
         b = 0
@@ -69,7 +147,8 @@ def n_exponential_decay(
     else:
         b = beta[-1]
 
-    index = len(beta[:-1]) // 2
+    beta = beta[:-1]
+    index = len(beta) // 2
     taus = beta[:index]
     a_vals = beta[index:]
 
