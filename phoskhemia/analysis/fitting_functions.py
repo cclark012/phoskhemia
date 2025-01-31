@@ -1,5 +1,6 @@
+
 import numpy as np
-from utils.typing import ArrayFloatAny
+from phoskhemia.utils.typing import ArrayFloatAny
 
 def exponential_decay(
         beta: tuple[float, float, float], 
@@ -17,6 +18,7 @@ def exponential_decay(
     Returns:
         ArrayFloatAny: One-dimensional array of values.
     """
+    tau1: float
 
     tau1, a1, b = beta
     return a1 * np.exp(-t / tau1) + b
@@ -142,15 +144,15 @@ def n_exponential_decay(
     """
 
     if len(beta) % 2 == 0:
-        b = 0
+        b: float = 0
 
     else:
-        b = beta[-1]
+        b: float = beta[-1]
 
     beta = beta[:-1]
-    index = len(beta) // 2
-    taus = beta[:index]
-    a_vals = beta[index:]
+    index: int = len(beta) // 2
+    taus: tuple[float, ...] = beta[:index]
+    a_vals: tuple[float, ...] = beta[index:]
 
     return np.sum(
         [a * np.exp(-t / tau) for a, tau in zip(a_vals, taus)], axis=0
