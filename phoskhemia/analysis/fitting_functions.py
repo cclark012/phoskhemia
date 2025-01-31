@@ -1,4 +1,3 @@
-
 import numpy as np
 from phoskhemia.utils.typing import ArrayFloatAny
 
