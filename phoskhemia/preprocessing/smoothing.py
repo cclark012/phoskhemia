@@ -79,8 +79,10 @@ def average1D(
     ) -> np.typing.ArrayLike:
 
     new_array = np.zeros_like(array[half_window:-half_window])
-    for i in prange(len(new_array)):
-        new_array[i] = np.mean(array[i - half_window:i + half_window + 1])
+    for i in prange(half_window, len(array) - half_window):
+        new_array[i - half_window] = np.mean(
+            array[i - half_window:i + half_window + 1]
+        )
 
     return new_array
 
@@ -122,8 +124,8 @@ def average2D(
     """
 
     new_array = np.zeros_like(array)
-    for i in prange(len(new_array[:, 0])):
-        for j in prange(len(new_array[0, :])):
+    for i in prange(m_rows, len(array[:, 0]) - m_rows):
+        for j in prange(n_cols, len(array[0, :]) - n_cols):
             new_array[i, j] = np.mean(
                 array[i - m_rows:i + m_rows + 1, j - n_cols:j + n_cols + 1]
             )
@@ -137,9 +139,11 @@ def average2D_rows(
     ) -> np.typing.ArrayLike:
     
     new_array = np.zeros_like(array)
-    for i in prange(len(new_array[:, 0])):
+    for i in prange(m_rows, len(array[:, 0]) - m_rows):
         for j in prange(len(new_array[0, :])):
-            new_array[i, j] = np.mean(array[i - m_rows:i + m_rows + 1, j])
+            new_array[i, j] = np.mean(
+                array[i - m_rows:i + m_rows + 1, j]
+            )
 
     return new_array[m_rows:-m_rows, :]
 
@@ -151,8 +155,10 @@ def average2D_cols(
 
     new_array = np.zeros_like(array)
     for i in prange(len(new_array[:, 0])):
-        for j in prange(len(new_array[0, :])):
-            new_array[i, j] = np.mean(array[i, j - n_cols:j + n_cols + 1])
+        for j in prange(n_cols, len(new_array[0, :]) - n_cols):
+            new_array[i, j] = np.mean(
+                array[i, j - n_cols:j + n_cols + 1]
+            )
 
     return new_array[:, n_cols:-n_cols]
 
@@ -184,7 +190,7 @@ def downsample2D(
     new_array[-1, 0] = np.mean(array[-m_rows - 1:, :n_cols + 1])
     new_array[-1, -1] = np.mean(array[-m_rows - 1:, -n_cols - 1:])
 
-    for i in prange(1, len(array[:-m_rows:(2 * m_rows), 0]) - 1):
+    for i in prange(1, len(array[::(2 * m_rows), 0]) - 1):
         # Get values for first and last columns of ith row. 
         new_array[i, 0] = np.mean(
             array[(2 * m_rows * i) - m_rows:(2 * m_rows * i) + m_rows + 1, 
@@ -196,7 +202,7 @@ def downsample2D(
                 -n_cols - 1:]
         )
 
-        for j in prange(1, len(array[0, :-n_cols:(2 * n_cols)]) - 1):
+        for j in prange(1, len(array[0, ::(2 * n_cols)]) - 1):
             # Get values for first and last rows of jth column.
             new_array[0, j] = np.mean(
                 array[:m_rows + 1, 
@@ -586,3 +592,35 @@ def smooth_via_OSVHT(
     print(f'{'-' * 55}\n')
 
     return reconstruction
+
+if __name__ == "__main__":
+    array = np.ones((11, 11))
+    for i in range((array.shape[0] // 2)+1):
+        array[i:-i, i:-i] += 1
+    
+    #print(array)
+    
+    with np.printoptions(precision=3):
+        #testarray = downsample2D(array, m_rows=2, n_cols=2)
+        #print(testarray, "\n")
+        
+        val = 2
+
+        rolling = np.zeros_like(array[::(2 * val), ::(2 * val)])
+
+        rolling[0, 0] = np.mean(array[:val+1, :val+1])
+        rolling[-1, -1] = np.mean(array[-val-1:, -val-1:])
+        rolling[0, -1] = np.mean(array[:val+1, -(val+1):])
+        rolling[-1, 0] = np.mean(array[-(val+1):, :val+1])
+
+        for i in range(1, np.shape(array[:-1:(2 * val)])[0]):
+            rolling[i, 0] = np.mean(array[2*i*val-val:2*i*val+val+1, :val+1])
+            rolling[i, -1] = np.mean(array[2*i*val-val:2*i*val+val+1, -(val+1):])
+            for j in range(1, np.shape(array[:, :-1:(2 * val)])[1]):
+                rolling[0, j] = np.mean(array[:val+1, 2*j*val-val:2*j*val+val+1])
+                rolling[-1, j] = np.mean(array[-(val+1):, 2*j*val-val:2*j*val+val+1])
+
+                rolling[i, j] = np.mean(array[2*i*val-val:2*i*val+val+1, 2*j*val-val:2*j*val+val+1])
+
+        print(rolling)
+        #assert np.allclose(testarray, rolling[:, 2:-2])
