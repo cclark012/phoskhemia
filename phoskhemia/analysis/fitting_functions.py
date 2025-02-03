@@ -17,10 +17,14 @@ def exponential_decay(
     Returns:
         ArrayFloatAny: One-dimensional array of values.
     """
+
     tau1: float
+    a1: float
+    b: float
 
     tau1, a1, b = beta
     return a1 * np.exp(-t / tau1) + b
+
 
 def biexponential_decay(
         beta: tuple[float, float, float, float, float], 
@@ -38,6 +42,12 @@ def biexponential_decay(
     Returns:
         ArrayFloatAny: One-dimensional array of values.
     """
+
+    tau1: float
+    tau2: float
+    a1: float
+    a2: float
+    b: float
 
     tau1, tau2, a1, a2, b = beta
     return (a1 * np.exp(-t / tau1) 
@@ -61,6 +71,14 @@ def triexponential_decay(
     Returns:
         ArrayFloatAny: One-dimensional array of values.
     """
+
+    tau1: float
+    tau2: float
+    tau3: float
+    a1: float
+    a2: float
+    a3: float
+    b: float
 
     tau1, tau2, tau3, a1, a2, a3, b = beta
     return (a1 * np.exp(-t / tau1) 
@@ -88,6 +106,16 @@ def tetraexponential_decay(
         ArrayFloatAny: One-dimensional array of values.
     """
 
+    tau1: float
+    tau2: float
+    tau3: float
+    tau4: float
+    a1: float
+    a2: float
+    a3: float
+    a4: float
+    b: float
+
     tau1, tau2, tau3, tau4, a1, a2, a3, a4, b = beta
     return (a1 * np.exp(-t / tau1) 
             + a2 * np.exp(-t / tau2) 
@@ -114,6 +142,18 @@ def pentaexponential_decay(
     Returns:
         ArrayFloatAny: One-dimensional array of values.
     """
+
+    tau1: float
+    tau2: float
+    tau3: float
+    tau4: float
+    tau5: float
+    a1: float
+    a2: float
+    a3: float
+    a4: float
+    a5: float
+    b: float
 
     tau1, tau2, tau3, tau4, tau5, a1, a2, a3, a4, a5, b = beta
     return (a1 * np.exp(-t / tau1) 
@@ -156,5 +196,4 @@ def n_exponential_decay(
     return np.sum(
         [a * np.exp(-t / tau) for a, tau in zip(a_vals, taus)], axis=0
     ) + b
-
 
