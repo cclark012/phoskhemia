@@ -11,7 +11,7 @@ with open(path.join(HERE, 'README.md'), encoding='utf-8') as f:
 setup(
     name='phoskhemia',
     packages=find_packages(include=['phoskhemia']),
-    version='0.1.0',
+    version='0.1.01a',
     description='Library for the handling and analysis of chemical spectroscopic data.',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -22,7 +22,13 @@ setup(
         "Programming Language :: Python :: 3.12",
     ],
     include_package_data=True,
-    install_requires=["numpy", "scipy", "matplotlib"],
+    install_requires=[
+        "numpy", 
+        "scipy", 
+        "matplotlib", 
+        "polars", 
+        "numba"
+    ],
     setup_requires=[],
     tests_require=[],
 )
