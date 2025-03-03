@@ -3,13 +3,14 @@ import scipy as sp
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 from scipy.linalg import cholesky
+from phoskhemia.utils.typing import ArrayFloatAny
 
 def arpls(
-        array: np.typing.ArrayLike, 
+        array: ArrayFloatAny, 
         lam: float | int=1e4, 
         ratio: float=0.05, 
         itermax: int=100
-    ) -> np.typing.ArrayLike:
+    ) -> ArrayFloatAny:
     """
     Baseline correction using asymmetrically
     reweighted penalized least squares smoothing
@@ -72,31 +73,42 @@ def arpls(
     n_elements: int = len(array)
 
     # Second-order difference matrix.
-    diff2nd = sparse.eye(n_elements, format='csc')
+    diff2nd: ArrayFloatAny = sparse.eye(n_elements, format='csc')
     diff2nd = diff2nd[1:] - diff2nd[:-1]
     diff2nd = diff2nd[1:] - diff2nd[:-1]
 
     # Symmetric pentadiagonal matrix.
-    balanced_pentadiagonal = lam * diff2nd.T * diff2nd
-    weights = np.ones(n_elements)
+    balanced_pentadiagonal: ArrayFloatAny = lam * diff2nd.T * diff2nd
+    weights: ArrayFloatAny = np.ones(n_elements)
 
     # Perform itermax number of iterations at most.
     for i in range(itermax):
-        weights_diag = sparse.diags(weights, 0, shape=(n_elements, n_elements))
+        weights_diag: ArrayFloatAny = (
+            sparse.diags(weights, 0, shape=(n_elements, n_elements))
+        )
 
         # Symmetric band-diagonal matrix that allows for more efficient algorithms.
-        sym_band_diag = sparse.csc_matrix(weights_diag + balanced_pentadiagonal)
+        sym_band_diag: ArrayFloatAny = (
+            sparse.csc_matrix(weights_diag + balanced_pentadiagonal)
+        )
 
         # Cholesky decomposition.
-        chol = sparse.csc_matrix(cholesky(sym_band_diag.todense()))
-        background = spsolve(chol, spsolve(chol.T, weights * array))
+        chol: ArrayFloatAny = (
+            sparse.csc_matrix(cholesky(sym_band_diag.todense()))
+        )
+
+        background: ArrayFloatAny = (
+            spsolve(chol, spsolve(chol.T, weights * array))
+        )
 
         # Find d- and the mean and standard deviation for weighting.
-        diff = array - background
-        diff_negative = diff[diff < 0]
-        mean = np.mean(diff_negative)
-        sigma = np.std(diff_negative)
-        new_weights = 1. / (1 + np.exp(2 * (diff - (2 * sigma - mean)) / sigma))
+        diff: ArrayFloatAny = array - background
+        diff_negative: ArrayFloatAny = diff[diff < 0]
+        mean: float = np.mean(diff_negative)
+        sigma: float = np.std(diff_negative)
+        new_weights: ArrayFloatAny = (
+            1. / (1 + np.exp(2 * (diff - (2 * sigma - mean)) / sigma))
+        )
 
         # Check exit condition.
         if np.linalg.norm(weights - new_weights) / np.linalg.norm(weights) < ratio:
@@ -109,11 +121,11 @@ def arpls(
     return background
 
 def als(
-        array: np.typing.ArrayLike, 
+        array: ArrayFloatAny, 
         lam: float | int=1e6, 
         ratio: float=0.1, 
         itermax: int=10
-    ) -> np.typing.ArrayLike:
+    ) -> ArrayFloatAny:
     """
     Implements an Asymmetric Least Squares Smoothing
     baseline correction algorithm (P. Eilers, H. Boelens 2005)
@@ -158,25 +170,31 @@ def als(
     """
 
     n_elements: int = len(array)
-    diff2nd = sparse.eye(n_elements, format='csc')
+    diff2nd: ArrayFloatAny = sparse.eye(n_elements, format='csc')
     diff2nd = diff2nd[1:] - diff2nd[:-1]
     diff2nd = diff2nd[1:] - diff2nd[:-1]
     diff2nd = diff2nd.T
-    weights = np.ones(n_elements)
+    weights: ArrayFloatAny = np.ones(n_elements)
 
     for i in range(itermax):
-        weights_diag = sparse.diags(weights, 0, shape=(n_elements, n_elements))
-        sym_band_diag = weights_diag + lam * diff2nd.dot(diff2nd.T)
-        background = spsolve(sym_band_diag, weights * array)
-        weights = ratio * (array > background) + (1 - ratio) * (array < background)
+        weights_diag: ArrayFloatAny = (
+            sparse.diags(weights, 0, shape=(n_elements, n_elements))
+        )
+        sym_band_diag: ArrayFloatAny = (
+            weights_diag + lam * diff2nd.dot(diff2nd.T)
+        )
+        background: ArrayFloatAny = spsolve(sym_band_diag, weights * array)
+        weights: ArrayFloatAny = (
+            ratio * (array > background) + (1 - ratio) * (array < background)
+        )
 
     return background
 
 def find_time_zero(
-        original_times: np.typing.ArrayLike,
-        original_data: np.typing.ArrayLike,
+        original_times: ArrayFloatAny,
+        original_data: ArrayFloatAny,
         printing: int=0,
-    ) -> tuple[np.typing.ArrayLike, np.typing.ArrayLike]:
+    ) -> tuple[ArrayFloatAny, ArrayFloatAny]:
     """
     Finds the time zero of a transient absorption spectrum 
     by finding the inflection point of the rising signal.
@@ -202,18 +220,18 @@ def find_time_zero(
     TRUNC_RANGE: int = 20
 
     time_zero: int = np.argmin(np.abs(original_times))
-    time_range: np.typing.ArrayLike = original_times[
+    time_range: ArrayFloatAny = original_times[
         time_zero - SMOOTH_RANGE:time_zero + SMOOTH_RANGE
     ]
 
-    truncated_window: np.typing.ArrayLike = time_range[
+    truncated_window: ArrayFloatAny = time_range[
         np.logical_and(time_range >= -TRUNC_RANGE, time_range <= TRUNC_RANGE)
     ]
     new_time_zeros: list[float] = []
 
     # Determine inflection point for each wavelength.
     for i in range(0, len(original_data[0, :])):
-        original_series: np.typing.ArrayLike = original_data[
+        original_series: ArrayFloatAny = original_data[
             time_zero - SMOOTH_RANGE:time_zero + SMOOTH_RANGE, i
         ]
 
@@ -221,7 +239,7 @@ def find_time_zero(
         series = sp.interpolate.make_smoothing_spline(time_range, original_series)
 
         # First derivative to find inflection point (relative maxima).
-        first_derivative: np.typing.ArrayLike = series.derivative(nu=1)(time_range)
+        first_derivative: ArrayFloatAny = series.derivative(nu=1)(time_range)
         first_inflection: int = np.argmax(np.abs(
             first_derivative[np.logical_and(
                 time_range >= -TRUNC_RANGE, time_range <= TRUNC_RANGE
@@ -230,7 +248,7 @@ def find_time_zero(
         first_new_time_zero: float = truncated_window[first_inflection]
 
         # Second derivative for inflection point (close to zero).
-        second_derivative: np.typing.ArrayLike = series.derivative(nu=2)(time_range)
+        second_derivative: ArrayFloatAny = series.derivative(nu=2)(time_range)
         second_inflection: int = np.argmin(np.abs(
             second_derivative[np.logical_and(
                 time_range >= -TRUNC_RANGE, time_range <= TRUNC_RANGE
@@ -248,18 +266,18 @@ def find_time_zero(
 
     # Use the median value of the obtained time zeros to shift the array.
     time_zero_ns: float = np.median(new_time_zeros)
-    delta_t: float = original_times[1:] - original_times[:-1]
+    delta_t: float = np.unique(original_times[1:] - original_times[:-1])[0]
 
     # Shift array values, but leave time axis where it is.
-    shift_value: int = int(time_zero_ns // np.unique(delta_t)[0])
-    data: np.typing.ArrayLike = original_data[time_zero + shift_value:, :]
+    shift_value: int = int(time_zero_ns // delta_t)
+    data: ArrayFloatAny = original_data[time_zero + shift_value:, :]
 
     # Truncate or extend the time axis.
     if shift_value >= 0:
-        times: np.typing.ArrayLike = original_times[time_zero:len(original_data[:, 0])]
+        times: ArrayFloatAny = original_times[time_zero:len(original_data[:, 0])]
 
     else:
-        times: np.typing.ArrayLike = np.arange(0, len(data[:, 0]) * delta_t, delta_t)
+        times: ArrayFloatAny = np.arange(0, len(data[:, 0]) * delta_t, delta_t)
 
     # Tell user how the data was adjusted if printing enabled.
     if printing == 1 or printing == 2:
@@ -277,3 +295,42 @@ def find_time_zero(
             print(f"Something went wrong. Check the data output.")
 
     return times, data
+
+def estimate_irf(array: ArrayFloatAny) -> ArrayFloatAny:
+    # Get an optimal size for the Fourier transform, 
+    # then make a periodic signal from the input array for FFT.
+    shape: int = sp.fft.next_fast_len(2 * len(array))
+    arr_stack: ArrayFloatAny = np.hstack(array, np.flip(array))
+    farray: ArrayFloatAny = sp.fft.fft(arr_stack, shape)
+
+    # Define Fourier coordinate for the derivative.
+    four_coord: ArrayFloatAny = (
+        2 * np.pi * np.arange(-shape // 2, shape // 2, 1) / shape
+    )
+
+    # Make a Gaussian window for smoothing the derivative.
+    window: ArrayFloatAny = (
+        np.roll(sp.signal.windows.general_gaussian(
+            shape, p=1, sig=len(array) // 4
+        ), shift=shape // 2)
+    )
+
+    # Calculate Fourier transform of derivative and convolve with Gaussian.
+    dfarray: ArrayFloatAny = (
+        np.roll(np.roll(
+            farray, shift=-shape // 2
+        ) * (1j * four_coord) ** 1, shift=shape // 2)
+    )
+    derivative: ArrayFloatAny = (
+        np.real(sp.fft.ifft(dfarray * window))[:len(array)]
+    )
+
+    # Approximately where IRF stops having significant contribution.
+    cutting_point: int = np.argmin(derivative)
+
+    # Deconvolve spectrum and IRF.
+    irf: ArrayFloatAny
+    remainder: ArrayFloatAny
+    irf, remainder = sp.signal.deconvolve(array, array[cutting_point:])
+
+    return irf
