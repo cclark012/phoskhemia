@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from phoskhemia.io.spectrum_handlers import MyArray
+from phoskhemia.data.spectrum_handlers import MyArray
 
 
 @pytest.fixture(scope="session")

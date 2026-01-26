@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy.signal import convolve
 
-from phoskhemia.io.spectrum_handlers import MyArray
+from phoskhemia.data.spectrum_handlers import MyArray
 
 
 # -------------------------------------------------
