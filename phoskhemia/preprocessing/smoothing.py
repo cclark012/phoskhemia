@@ -594,33 +594,41 @@ def smooth_via_OSVHT(
     return reconstruction
 
 if __name__ == "__main__":
-    array = np.ones((11, 11))
+    array = np.ones((13, 13))
     for i in range((array.shape[0] // 2)+1):
         array[i:-i, i:-i] += 1
-    
-    #print(array)
-    
-    with np.printoptions(precision=3):
-        #testarray = downsample2D(array, m_rows=2, n_cols=2)
-        #print(testarray, "\n")
-        
-        val = 2
+
+    val = 1
+
+    with np.printoptions(precision=1):
+        testarray = downsample2D(array, m_rows=val, n_cols=val)
+        print(testarray, "\n")
+
+        rows_to_trim = (array.shape[0] - 1) % (2 * val)
+        cols_to_trim = (array.shape[1] - 1) % (2 * val)
+        array = array[:array.shape[0] - rows_to_trim, :array.shape[1] - cols_to_trim]
+
+        newarray = np.copy(array)
+        newarray[::(2 * val), ::(2 * val)] = 0
+        #print(newarray)
 
         rolling = np.zeros_like(array[::(2 * val), ::(2 * val)])
 
         rolling[0, 0] = np.mean(array[:val+1, :val+1])
-        rolling[-1, -1] = np.mean(array[-val-1:, -val-1:])
+        rolling[-1, -1] = np.mean(array[-(val+1):, -(val+1):])
         rolling[0, -1] = np.mean(array[:val+1, -(val+1):])
         rolling[-1, 0] = np.mean(array[-(val+1):, :val+1])
 
-        for i in range(1, np.shape(array[:-1:(2 * val)])[0]):
+        for i in range(1, np.shape(array[::(2 * val)])[0]-1):
             rolling[i, 0] = np.mean(array[2*i*val-val:2*i*val+val+1, :val+1])
             rolling[i, -1] = np.mean(array[2*i*val-val:2*i*val+val+1, -(val+1):])
-            for j in range(1, np.shape(array[:, :-1:(2 * val)])[1]):
-                rolling[0, j] = np.mean(array[:val+1, 2*j*val-val:2*j*val+val+1])
+
+            for j in range(1, np.shape(array[:, ::(2 * val)])[1] - 1):
+                rolling[0, j] = np.mean(array[:val+1, 2*j*val:2*j*val+val+1])
                 rolling[-1, j] = np.mean(array[-(val+1):, 2*j*val-val:2*j*val+val+1])
 
                 rolling[i, j] = np.mean(array[2*i*val-val:2*i*val+val+1, 2*j*val-val:2*j*val+val+1])
+                #print(array[2*i*val-val:2*i*val+val+1, 2*j*val-val:2*j*val+val+1])
 
         print(rolling)
-        #assert np.allclose(testarray, rolling[:, 2:-2])
+        #assert np.allclose(testarray, rolling)
