@@ -3,6 +3,7 @@ from numpy.typing import NDArray
 
 from phoskhemia.data.spectrum_handlers import MyArray
 from phoskhemia.fitting.projections import project_amplitudes
+from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.utils.typing import ArrayFloatAny
 
 def r_squared(
@@ -415,110 +416,186 @@ def compare_models(results, criterion="AICc"):
     return table
 
 def cross_validate_wavelengths(
-    arr,
-    kinetic_model,
-    beta0,
-    *,
-    noise,
-    n_folds=5,
-    lam=1e-12,
-):
-    wl = arr.x
-    n_wl = len(wl)
-    fold_size = n_wl // n_folds
-
-    scores = []
-
-    for k in range(n_folds):
-        start = k * fold_size
-        stop = (k + 1) * fold_size
-
-        mask = np.ones(n_wl, dtype=bool)
-        mask[start:stop] = False
-
-        # Array with fold cut out.
-        train = MyArray(
-            arr[:, mask],
-            x=wl[mask],
-            y=arr.y,
-        )
-        # Array with only the fold.
-        test = MyArray(
-            arr[:, ~mask],
-            x=wl[~mask],
-            y=arr.y,
-        )
-
-        res = train.fit_global_kinetics(
-            kinetic_model,
-            beta0,
-            noise=noise[mask],
-            lam=lam,
-        )
-
-        resid = compute_residual_maps(
-            test,
-            res,
-            noise=noise[~mask],
-        )
-
-        wres = np.asarray(resid["weighted"])
-
-        N_test = wres.size
-        p_nl = kinetic_model.n_params()
-        dof = max(N_test - p_nl, 1)
-
-        chi2 = np.sum(wres * wres)
-        chi2_red = chi2 / dof
-
-        scores.append(chi2_red)
-
-    return {
-        "chi2_red_mean": np.mean(scores),
-        "chi2_red_std": np.std(scores),
-        "chi2_red_folds": scores,
-        "n_folds": n_folds,
-    }
-
-def rank_models_by_cv(cv_results, alpha=1.0, tol=0.05):
+        arr: MyArray,
+        kinetic_model: KineticModel,
+        beta0: NDArray[np.floating],
+        *,
+        noise: NDArray[np.floating],
+        n_folds: int = 5,
+        lam: float = 1e-12,
+        debug: bool = False,
+    ) -> dict:
     """
-    Rank models based on CV reduced chi2.
+    Perform wavelength-block cross-validation for a global kinetic model.
 
     Parameters
     ----------
-    cv_results : dict[str, dict]
-        model_name -> result of cross_validate_wavelengths
+    arr : MyArray
+        Full dataset
+    kinetic_model : KineticModel
+        Kinetic model to validate
+    beta0 : ndarray
+        Initial kinetic parameter guesses
+    noise : ndarray
+        Per-wavelength noise σ(λ)
+    n_folds : int
+        Number of wavelength folds
+    lam : float
+        Tikhonov regularization strength
+    debug : bool
+        Print diagnostics on failures
+
+    Returns
+    -------
+    result : dict
+        {
+            "chi2_red_folds": list[float],
+            "chi2_red_mean": float,
+            "chi2_red_std": float,
+            "n_folds": int,
+        }
+    """
+
+    data: NDArray[np.floating] = np.asarray(arr, dtype=float)
+    times: NDArray[np.floating] = np.asarray(arr.y, dtype=float)
+    wl: NDArray[np.floating] = np.asarray(arr.x, dtype=float)
+    beta0: NDArray[np.floating] = np.asarray(beta0, dtype=float)
+    noise: NDArray[np.floating] = np.asarray(noise, dtype=float)
+    
+    if beta0.size != kinetic_model.n_params():
+        raise ValueError("beta0 length mismatch")
+
+    n_wl: int = data.shape[1]
+
+    if noise.size != n_wl:
+        raise ValueError("noise length must match number of wavelengths")
+
+    if n_folds < 2 or n_folds > n_wl:
+        raise ValueError("invalid number of folds")
+
+    # Build wavelength indices
+    indices: NDArray[np.integer] = np.arange(n_wl)
+    folds: list[NDArray[np.integer]] = np.array_split(indices, n_folds)
+
+    chi2_red_folds: list[float] = []
+
+    for k, test_idx in enumerate(folds):
+        # Set the train/test mask
+        train_mask: NDArray[np.bool_] = np.ones(n_wl, dtype=bool)
+        train_mask[test_idx] = False
+
+        # Mask wavelength block for training set
+        train = MyArray(
+            data[:, train_mask],
+            x=wl[train_mask],
+            y=times,
+        )
+        # Mask everything except the wavelength block for the test set
+        test = MyArray(
+            data[:, ~train_mask],
+            x=wl[~train_mask],
+            y=times,
+        )
+
+        noise_train: NDArray[np.floating] = noise[train_mask]
+        noise_test: NDArray[np.floating] = noise[~train_mask]
+
+        # Fit on training wavelengths only
+        fit_res: dict = train.fit_global_kinetics(
+            kinetic_model,
+            beta0,
+            noise=noise_train,
+            lam=lam,
+            propagate_kinetic_uncertainty=False,
+            debug=debug,
+        )
+
+        # Compute residuals on test wavelengths
+        resid: dict[str, MyArray] = compute_residual_maps(
+            test,
+            fit_res,
+            noise=noise_test,
+            lam=lam,
+        )
+
+        if resid["weighted"] is None:
+            raise RuntimeError("weighted residuals required for CV")
+
+        weighted_res: NDArray[np.floating] = np.asarray(resid["weighted"])
+
+        N_test: int = weighted_res.size
+        n_params: int = kinetic_model.n_params()
+        dof: int = max(N_test - n_params, 1)
+
+        chi2: float = float(np.sum(weighted_res * weighted_res))
+        chi2_red: float = chi2 / dof
+
+        chi2_red_folds.append(chi2_red)
+
+        if debug:
+            print(f"CV fold {k}: chi2_red = {chi2_red:.3f}")
+
+    chi2_red_folds: NDArray[np.floating] = np.asarray(chi2_red_folds)
+
+    return {
+        "chi2_red_folds": chi2_red_folds.tolist(),
+        "chi2_red_mean": float(chi2_red_folds.mean()),
+        "chi2_red_std": float(chi2_red_folds.std(ddof=1)),
+        "n_folds": n_folds,
+    }
+
+def cv_rank_models(
+        cv_results: dict[str, dict],
+        *,
+        alpha: float = 1.0,
+        tol: float = 0.05,
+    ) -> list[dict]:
+    """
+    Rank models based on cross-validated reduced x².
+
+    Parameters
+    ----------
+    cv_results : dict
+        Mapping model_name -> cross_validate_wavelengths result
     alpha : float
-        Weight for stability penalty
+        Weight for fold-to-fold variability penalty
     tol : float
-        Indifference threshold
+        Indifference threshold for Δscore
 
     Returns
     -------
     ranking : list of dict
-        Sorted model ranking
+        Each entry contains:
+            - model
+            - chi2_cv_mean
+            - chi2_cv_std
+            - score
+            - Δscore
+            - indistinguishable
     """
 
-    rows = []
+    rows: list[dict] = []
 
-    for name, res in cv_results.items():
-        chi2s = np.asarray(res["chi2_red_folds"])
-        mu = chi2s.mean()
-        sigma = chi2s.std()
+    for model_name, res in cv_results.items():
+        chi2_folds: NDArray[np.floating] = np.asarray(res["chi2_red_folds"], dtype=float)
 
-        score = mu + alpha * sigma
+        mu: float = float(chi2_folds.mean())
+        sigma: float = float(chi2_folds.std())
+
+        score: float = mu + alpha * sigma
 
         rows.append({
-            "model": name,
+            "model": model_name,
             "chi2_cv_mean": mu,
             "chi2_cv_std": sigma,
             "score": score,
         })
 
+    # Sort by composite score
     rows.sort(key=lambda r: r["score"])
 
-    # Compute Δscore
-    best_score = rows[0]["score"]
+    # Compute Δscore and equivalence flag
+    best_score: float = rows[0]["score"]
     for r in rows:
         r["Δscore"] = r["score"] - best_score
         r["indistinguishable"] = r["Δscore"] < tol
