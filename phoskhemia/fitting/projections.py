@@ -1,6 +1,8 @@
 import numpy as np
 from numpy.typing import NDArray
 
+from phoskhemia.kinetics.base import KineticModel
+
 def project_amplitudes(
         traces: NDArray[np.floating], 
         data: NDArray[np.floating], 
@@ -37,8 +39,8 @@ def project_amplitudes(
     """
 
     # Safety checks
-    traces: np.ndarray = np.asarray(traces, dtype=float)
-    data: np.ndarray = np.asarray(data, dtype=float)
+    traces: NDArray[np.floating] = np.asarray(traces, dtype=float)
+    data: NDArray[np.floating] = np.asarray(data, dtype=float)
 
     # Catch 1D traces for cases with one species
     if traces.ndim == 1:
@@ -63,21 +65,21 @@ def project_amplitudes(
 
     # Weighting
     weight: float = 1.0 / noise
-    traces_w: np.ndarray = traces * weight
-    data_w: np.ndarray = data * weight
+    traces_w: NDArray[np.floating] = traces * weight
+    data_w: NDArray[np.floating] = data * weight
 
     # Regularized normal equations
-    CTC: np.ndarray = traces_w.T @ traces_w + lam * np.eye(n_species)
-    CTy: np.ndarray = traces_w.T @ data_w
-    coeffs: np.ndarray
+    CTC: NDArray[np.floating] = traces_w.T @ traces_w + lam * np.eye(n_species)
+    CTy: NDArray[np.floating] = traces_w.T @ data_w
+    coeffs: NDArray[np.floating]
     try:
         coeffs = np.linalg.solve(CTC, CTy)
     except np.linalg.LinAlgError:
         coeffs = np.linalg.lstsq(CTC, CTy, rcond=None)[0]
 
     # Residuals (unweighted)
-    data_fit: np.ndarray = traces @ coeffs
-    residuals: np.ndarray = data - data_fit
+    data_fit: NDArray[np.floating] = traces @ coeffs
+    residuals: NDArray[np.floating] = data - data_fit
 
     # Residual variance (weighted)
     RSS: float = np.sum((weight * residuals) ** 2)
@@ -85,6 +87,86 @@ def project_amplitudes(
     sigma2: float = RSS / dof
 
     # Covariance
-    cov: np.ndarray = sigma2 * np.linalg.inv(CTC)
+    cov: NDArray[np.floating] = sigma2 * np.linalg.inv(CTC)
 
     return coeffs, cov, residuals
+
+def propagate_kinetic_covariance(
+        kinetic_model: KineticModel,
+        times: NDArray[np.floating],
+        beta: NDArray[np.floating],
+        coeffs: NDArray[np.floating],
+        cov_beta: NDArray[np.floating],
+        data: NDArray[np.floating],
+        noise: float,
+        lam: float,
+        eps=1e-6,
+    ) -> NDArray[np.floating]:
+    """
+    Propagate kinetic parameter covariance into amplitude covariance
+    (linearized around the fitted parameters).
+
+    Parameters
+    ----------
+    kinetic_model : KineticModel
+    times : ndarray, shape (n_times,)
+    beta : ndarray, shape (n_params,)
+        Fitted kinetic parameters (log-space)
+    coeffs : ndarray, shape (n_species,)
+        Amplitudes at this wavelength
+    cov_beta : ndarray, shape (n_params, n_params)
+        Kinetic covariance matrix
+    data : ndarray, shape (n_times,)
+        Observed data at this wavelength
+    noise : float
+        Noise estimate σ
+    lam : float
+        Tikhonov regularization strength
+    eps : float
+        Finite-difference step size
+
+    Returns
+    -------
+    cov_kin : ndarray, shape (n_species, n_species)
+        Covariance contribution from kinetic uncertainty
+    """
+
+    times: NDArray[np.floating] = np.asarray(times, dtype=float)
+    beta: NDArray[np.floating] = np.asarray(beta, dtype=float)
+    coeffs: NDArray[np.floating] = np.asarray(coeffs, dtype=float)
+    cov_beta: NDArray[np.floating] = np.asarray(cov_beta, dtype=float)
+    data: NDArray[np.floating] = np.asarray(data, dtype=float)
+
+    n_params: int = beta.size
+    n_species: int = coeffs.size
+
+    if cov_beta.shape != (n_params, n_params):
+        raise ValueError("cov_beta shape mismatch")
+
+    if data.shape[0] != times.shape[0]:
+        raise ValueError("data and times length mismatch")
+
+    # Empty array for Jacobian
+    jacobian: NDArray[np.floating] = np.zeros((n_species, n_params))
+
+    # Compute finite-difference Jacobian
+    for k in range(n_params):
+        eps_k = eps * max(abs(beta[k]), 1.0)
+        dbeta: NDArray[np.floating] = np.zeros_like(beta)
+        dbeta[k] = eps_k
+
+        traces_k: NDArray[np.floating] = kinetic_model.solve(times, beta + dbeta)
+
+        coeffs_k: NDArray[np.floating]
+        coeffs_k, _, _ = project_amplitudes(
+            traces_k,
+            data,
+            noise,
+            lam,
+        )
+
+        jacobian[:, k] = (coeffs_k - coeffs) / eps_k
+
+    cov_kin: NDArray[np.floating] = jacobian @ cov_beta @ jacobian.T
+    return cov_kin
+
