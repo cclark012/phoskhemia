@@ -2,6 +2,21 @@ import numpy as np
 import copy
 from scipy.signal import convolve
 
+# my_array = np.array(
+#     [[1, 1, 1, 1, 1],
+#     [2, 2, 2, 2, 2],
+#     [3, 3, 3, 3, 3],
+#     [2, 2, 2, 2, 2],
+#     [1, 1, 1, 1, 1]], dtype=float)
+# arr = MyArray(my_array, x=np.linspace(0,4,5), y=np.linspace(0,4,5))
+# a = arr.smooth(
+#     window=(5, 5),
+#     mode="same",
+# )
+# print(a)
+
+
+
 class _AddWithMode:
     def __init__(self, obj, mode):
         self.obj = obj
@@ -15,6 +30,7 @@ class MyArray(np.ndarray):
     __array_priority__ = 1000.0
 
     _SUPPORTED_ARRAY_FUNCTIONS = {
+        np.pow,
         np.mean,
         np.sum,
         np.average,
@@ -637,16 +653,13 @@ class MyArray(np.ndarray):
             return repr(arr)
         return f"{base}\nmeta: x={coord_repr(getattr(self, 'x', None))}, y={coord_repr(getattr(self, 'y', None))}"
 
+    def fit_global_kinetics(
+        self: MyArray,
+        *args,
+        **kwargs,
+    ) -> dict:
+        from phoskhemia.fitting.global_fit import fit_global_kinetics
+        return fit_global_kinetics(self, *args, **kwargs)
 
-my_array = np.array(
-    [[1, 1, 1, 1, 1],
-    [2, 2, 2, 2, 2],
-    [3, 3, 3, 3, 3],
-    [2, 2, 2, 2, 2],
-    [1, 1, 1, 1, 1]], dtype=float)
-arr = MyArray(my_array, x=np.linspace(0,4,5), y=np.linspace(0,4,5))
-a = arr.smooth(
-    window=(5, 5),
-    mode="same",
-)
-print(a)
+
+
