@@ -4,7 +4,7 @@ from scipy import odr
 
 from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.fitting.projections import project_amplitudes
-from phoskhemia.fitting.statistics import compute_diagnostics
+from phoskhemia.fitting.validation import compute_diagnostics
 from phoskhemia.fitting.projections import propagate_kinetic_covariance
 from phoskhemia.data.spectrum_handlers import MyArray
 
@@ -177,3 +177,9 @@ def fit_global_kinetics(
     }
 
     return result
+
+def reconstruct_fit():
+    pass
+
+def reconstruct_species():
+    pass
