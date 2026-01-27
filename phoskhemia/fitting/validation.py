@@ -1,5 +1,9 @@
 import numpy as np
-from utils.typing import ArrayFloatAny
+from numpy.typing import NDArray
+
+from phoskhemia.data.spectrum_handlers import MyArray
+from phoskhemia.fitting.projections import project_amplitudes
+from phoskhemia.utils.typing import ArrayFloatAny
 
 def r_squared(
         data: ArrayFloatAny, 
@@ -230,3 +234,295 @@ def akaike_information_criterion(
     )
 
     return AIClikelihood + correction
+
+def compute_diagnostics(
+    y_obs,
+    y_fit,
+    noise,
+    n_params,
+):
+    """
+    Compute statistical diagnostics for global fit.
+
+    Parameters
+    ----------
+    y_obs : ndarray, shape (N,)
+        Observed flattened data
+    y_fit : ndarray, shape (N,)
+        Fitted flattened data
+    noise : ndarray, shape (N,)
+        Noise standard deviation per point
+    n_params : int
+        Number of nonlinear fitted parameters
+
+    Returns
+    -------
+    diagnostics : dict
+    """
+
+    resid = y_obs - y_fit
+    wresid = resid / noise
+
+    N = y_obs.size
+    p = n_params
+    dof = max(N - p, 1)
+
+    chi2 = np.sum(wresid**2)
+    chi2_red = chi2 / dof
+
+    # R^2 (unweighted, descriptive only)
+    ss_res = np.sum(resid**2)
+    ss_tot = np.sum((y_obs - y_obs.mean())**2)
+    R2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
+
+    # AIC and AICc
+    AIC = 2 * p + chi2
+    if N > p + 1:
+        AICc = AIC + (2 * p * (p + 1)) / (N - p - 1)
+    else:
+        AICc = np.nan
+
+    return {
+        "chi2": chi2,
+        "chi2_red": chi2_red,
+        "R2": R2,
+        "AIC": AIC,
+        "AICc": AICc,
+        "dof": dof,
+    }
+
+def compute_residual_maps(
+        arr: MyArray,
+        fit_result: dict,
+        *,
+        noise: NDArray[np.floating] | None = None,
+        lam: float = 1e-12,
+    ) -> dict[str, MyArray]:
+    """
+    Compute raw and weighted residual maps for a global kinetic fit.
+
+    Parameters
+    ----------
+    arr : MyArray
+        Dataset to evaluate (train or test)
+    fit_result : dict
+        Result returned by fit_global_kinetics
+    noise : ndarray or None
+        Per-wavelength noise σ(λ)
+    lam : float
+        Tikhonov regularization strength
+
+    Returns
+    -------
+    residuals : dict
+        {
+            "raw": MyArray,
+            "weighted": MyArray | None,
+        }
+    """
+
+    if not isinstance(fit_result, dict):
+        raise TypeError("fit_result must be a dict from fit_global_kinetics")
+
+    if "_cache" not in fit_result:
+        raise KeyError("fit_result is missing '_cache'")
+
+    cache = fit_result["_cache"]
+    kinetic_model = cache["model"]
+    beta = cache["beta"]
+
+    data: NDArray[np.floating] = np.asarray(arr, dtype=float)
+    times: NDArray[np.floating] = np.asarray(arr.y, dtype=float)
+    wl: NDArray[np.floating] = np.asarray(arr.x, dtype=float)
+
+    if data.shape[0] != times.shape[0]:
+        raise ValueError("data and times length mismatch")
+
+    n_wl: int = data.shape[1]
+
+    has_noise: bool = noise is not None
+    if noise is None:
+        noise = np.ones(n_wl, dtype=float)
+    else:
+        noise = np.asarray(noise, dtype=float)
+        if noise.size != n_wl:
+            raise ValueError("noise length must match number of wavelengths")
+
+    # Solve kinetics for THESE times
+    traces: NDArray[np.floating] = kinetic_model.solve(times, beta)
+
+    fit: NDArray[np.floating] = np.empty_like(data)
+
+    # Re-project amplitudes wavelength-by-wavelength
+    for i in range(n_wl):
+        coeffs: NDArray[np.floating]
+        coeffs, _, _ = project_amplitudes(
+            traces,
+            data[:, i],
+            noise[i],
+            lam,
+        )
+        fit[:, i] = traces @ coeffs
+
+    raw_residuals: NDArray[np.floating] = data - fit
+    raw: MyArray = MyArray(raw_residuals, x=wl, y=times)
+
+    if has_noise:
+        weighted_residuals: NDArray[np.floating] = raw_residuals / noise[None, :]
+        weighted: MyArray = MyArray(weighted_residuals, x=wl, y=times)
+    else:
+        weighted: MyArray = None
+
+    return {
+        "raw": raw,
+        "weighted": weighted,
+    }
+
+def compare_models(results, criterion="AICc"):
+    """
+    Compare multiple fit results.
+
+    Parameters
+    ----------
+    results : dict[str, dict]
+        Mapping name -> fit_result
+    criterion : {"AIC", "AICc"}
+
+    Returns
+    -------
+    comparison : list of dict
+        Sorted by best model
+    """
+
+    table = []
+    for name, res in results.items():
+        diag = res["diagnostics"]
+        table.append({
+            "model": name,
+            "AIC": diag["AIC"],
+            "AICc": diag["AICc"],
+            "chi2_red": diag["chi2_red"],
+        })
+
+    key = criterion
+    table.sort(key=lambda d: d[key])
+
+    # Compute ΔAIC
+    best = table[0][key]
+    for row in table:
+        row[f"Δ{criterion}"] = row[key] - best
+
+    return table
+
+def cross_validate_wavelengths(
+    arr,
+    kinetic_model,
+    beta0,
+    *,
+    noise,
+    n_folds=5,
+    lam=1e-12,
+):
+    wl = arr.x
+    n_wl = len(wl)
+    fold_size = n_wl // n_folds
+
+    scores = []
+
+    for k in range(n_folds):
+        start = k * fold_size
+        stop = (k + 1) * fold_size
+
+        mask = np.ones(n_wl, dtype=bool)
+        mask[start:stop] = False
+
+        # Array with fold cut out.
+        train = MyArray(
+            arr[:, mask],
+            x=wl[mask],
+            y=arr.y,
+        )
+        # Array with only the fold.
+        test = MyArray(
+            arr[:, ~mask],
+            x=wl[~mask],
+            y=arr.y,
+        )
+
+        res = train.fit_global_kinetics(
+            kinetic_model,
+            beta0,
+            noise=noise[mask],
+            lam=lam,
+        )
+
+        resid = compute_residual_maps(
+            test,
+            res,
+            noise=noise[~mask],
+        )
+
+        wres = np.asarray(resid["weighted"])
+
+        N_test = wres.size
+        p_nl = kinetic_model.n_params()
+        dof = max(N_test - p_nl, 1)
+
+        chi2 = np.sum(wres * wres)
+        chi2_red = chi2 / dof
+
+        scores.append(chi2_red)
+
+    return {
+        "chi2_red_mean": np.mean(scores),
+        "chi2_red_std": np.std(scores),
+        "chi2_red_folds": scores,
+        "n_folds": n_folds,
+    }
+
+def rank_models_by_cv(cv_results, alpha=1.0, tol=0.05):
+    """
+    Rank models based on CV reduced chi2.
+
+    Parameters
+    ----------
+    cv_results : dict[str, dict]
+        model_name -> result of cross_validate_wavelengths
+    alpha : float
+        Weight for stability penalty
+    tol : float
+        Indifference threshold
+
+    Returns
+    -------
+    ranking : list of dict
+        Sorted model ranking
+    """
+
+    rows = []
+
+    for name, res in cv_results.items():
+        chi2s = np.asarray(res["chi2_red_folds"])
+        mu = chi2s.mean()
+        sigma = chi2s.std()
+
+        score = mu + alpha * sigma
+
+        rows.append({
+            "model": name,
+            "chi2_cv_mean": mu,
+            "chi2_cv_std": sigma,
+            "score": score,
+        })
+
+    rows.sort(key=lambda r: r["score"])
+
+    # Compute Δscore
+    best_score = rows[0]["score"]
+    for r in rows:
+        r["Δscore"] = r["score"] - best_score
+        r["indistinguishable"] = r["Δscore"] < tol
+
+    return rows
+
+
