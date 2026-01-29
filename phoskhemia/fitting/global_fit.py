@@ -6,10 +6,10 @@ from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.fitting.projections import project_amplitudes
 from phoskhemia.fitting.validation import compute_diagnostics
 from phoskhemia.fitting.projections import propagate_kinetic_covariance
-from phoskhemia.data.spectrum_handlers import MyArray
+from phoskhemia.data.spectrum_handlers import TransientAbsorption
 
 def fit_global_kinetics(
-        self: MyArray,
+        self: TransientAbsorption,
         kinetic_model: KineticModel,
         beta0: NDArray[np.floating],
         *,
