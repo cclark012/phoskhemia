@@ -26,7 +26,7 @@ def with_mode(obj, mode):
     return _AddWithMode(obj, mode)
 
 
-class MyArray(np.ndarray):
+class TransientAbsorption(np.ndarray):
     __array_priority__ = 1000.0
 
     _SUPPORTED_ARRAY_FUNCTIONS = {
@@ -59,7 +59,7 @@ class MyArray(np.ndarray):
 
         # Now arr must be 2-D
         if arr.ndim != 2:
-            raise ValueError("MyArray requires a 2-D array (or 1-D which will become 1xN or Nx1).")
+            raise ValueError("TransientAbsorption requires a 2-D array (or 1-D which will become 1xN or Nx1).")
 
         obj = arr.view(cls)
         nrows, ncols = obj.shape
@@ -180,7 +180,7 @@ class MyArray(np.ndarray):
             else:
                 out = convolve(data, kernel, **kwargs)
 
-        result = out.view(MyArray)
+        result = out.view(TransientAbsorption)
         result.x = self.x
         result.y = self.y
 
@@ -215,8 +215,8 @@ class MyArray(np.ndarray):
     def _continuous_axis(a, b, tol=1e-8):
         a = np.asarray(a, dtype=float)
         b = np.asarray(b, dtype=float)
-        dx_a = MyArray._infer_spacing(a)
-        dx_b = MyArray._infer_spacing(b)
+        dx_a = TransientAbsorption._infer_spacing(a)
+        dx_b = TransientAbsorption._infer_spacing(b)
 
         if dx_a is not None and dx_b is not None:
             if not np.isclose(dx_a, dx_b, rtol=1e-6, atol=1e-9):
@@ -326,8 +326,8 @@ class MyArray(np.ndarray):
         return np.array(averaged_ys, dtype=float), vals
 
     def combine_with(self, other, fill_value=0.0, mode="average"):
-        if not isinstance(other, MyArray):
-            raise TypeError("combine_with expects another MyArray")
+        if not isinstance(other, TransientAbsorption):
+            raise TypeError("combine_with expects another TransientAbsorption")
 
         if mode not in ("average", "concat"):
             raise ValueError("mode must be 'average' or 'concat'")
@@ -341,7 +341,7 @@ class MyArray(np.ndarray):
                 for x_val, col in zip(other.x, np.asarray(other).T):
                     cols.append((float(x_val), tuple(map(float, col))))
                 x_new, vals = self._group_and_average_columns(cols)
-                return MyArray(vals, x=x_new, y=copy.copy(self.y))
+                return TransientAbsorption(vals, x=x_new, y=copy.copy(self.y))
 
             # concat along y if x match exactly — build rows and average duplicates by y
             if np.array_equal(self.x, other.x):
@@ -351,7 +351,7 @@ class MyArray(np.ndarray):
                 for y_val, row in zip(other.y, np.asarray(other)):
                     rows.append((float(y_val), tuple(map(float, row))))
                 y_new, vals = self._group_and_average_rows(rows)
-                return MyArray(vals, x=copy.copy(self.x), y=y_new)
+                return TransientAbsorption(vals, x=copy.copy(self.x), y=y_new)
 
             # else refuse
             raise ValueError(
@@ -386,7 +386,7 @@ class MyArray(np.ndarray):
         with np.errstate(invalid='ignore', divide='ignore'):
             averaged = np.where(new_counts > 0, new_vals_sum / new_counts, fill_value)
 
-        return MyArray(averaged, x=x_new, y=y_new)
+        return TransientAbsorption(averaged, x=x_new, y=y_new)
 
     def add(self, other, mode="average", fill_value=0.0):
         if mode in ("average", "concat"):
@@ -398,29 +398,29 @@ class MyArray(np.ndarray):
         if isinstance(other, _AddWithMode):
             target = other.obj
             mode = other.mode
-            if not isinstance(target, MyArray):
+            if not isinstance(target, TransientAbsorption):
                 return NotImplemented
             return self.combine_with(target, fill_value=0.0, mode=mode)
 
-        # non-MyArray (scalar or ndarray)
-        if not isinstance(other, MyArray):
+        # non-TransientAbsorption (scalar or ndarray)
+        if not isinstance(other, TransientAbsorption):
             try:
                 res = np.asarray(np.asarray(self) + other)
-                out = res.view(MyArray)
+                out = res.view(TransientAbsorption)
                 object.__setattr__(out, "x", copy.copy(self.x))
                 object.__setattr__(out, "y", copy.copy(self.y))
                 return out
             except Exception:
                 return NotImplemented
 
-        # both MyArray -> default CONCAT (order-independent due to grouping+averaging)
+        # both TransientAbsorption -> default CONCAT (order-independent due to grouping+averaging)
         return self.combine_with(other, fill_value=0.0, mode="concat")
 
     def __radd__(self, other):
         if isinstance(other, _AddWithMode):
             target = other.obj
             mode = other.mode
-            if not isinstance(target, MyArray):
+            if not isinstance(target, TransientAbsorption):
                 return NotImplemented
             return target.combine_with(self, fill_value=0.0, mode=mode)
         return self.__add__(other)
@@ -437,7 +437,7 @@ class MyArray(np.ndarray):
             elif len(key) == 1:
                 row_idx, col_idx = key[0], slice(None)
             else:
-                raise IndexError("Too many indices for MyArray")
+                raise IndexError("Too many indices for TransientAbsorption")
         else:
             row_idx, col_idx = key, slice(None)
 
@@ -448,7 +448,7 @@ class MyArray(np.ndarray):
         if not isinstance(result, np.ndarray):
             result = np.array(result)
 
-        out = result.view(MyArray)
+        out = result.view(TransientAbsorption)
 
         # Helper to safely slice coordinate arrays (returns None if coord is None)
         def slice_coord(coord, idx):
@@ -512,22 +512,22 @@ class MyArray(np.ndarray):
         return out
 
     def __array_function__(self, func, types, args, kwargs):
-        if func not in MyArray._SUPPORTED_ARRAY_FUNCTIONS:
+        if func not in TransientAbsorption._SUPPORTED_ARRAY_FUNCTIONS:
             return NotImplemented
 
-        # convert MyArray in args to ndarray and remember MyArray inputs
+        # convert TransientAbsorption in args to ndarray and remember TransientAbsorption inputs
         numeric_args = []
-        myarray_inputs = []
+        TransientAbsorption_inputs = []
         for a in args:
-            if isinstance(a, MyArray):
+            if isinstance(a, TransientAbsorption):
                 numeric_args.append(np.asarray(a))
-                myarray_inputs.append(a)
+                TransientAbsorption_inputs.append(a)
             else:
                 numeric_args.append(a)
 
-        # convert any MyArray inside kwargs
+        # convert any TransientAbsorption inside kwargs
         def _convert_kwval(v):
-            if isinstance(v, MyArray):
+            if isinstance(v, TransientAbsorption):
                 return np.asarray(v)
             if isinstance(v, (list, tuple)):
                 t = type(v)
@@ -575,12 +575,12 @@ class MyArray(np.ndarray):
             reduced_axes = _normalize_axis(axis, orig_ndim)
             surviving_axes = [i for i in range(orig_ndim) if i not in reduced_axes]
 
-            # helper: find a common coordinate for axis_idx among all MyArray inputs, otherwise None
+            # helper: find a common coordinate for axis_idx among all TransientAbsorption inputs, otherwise None
             def _common_coord_for_axis(axis_idx):
-                if not myarray_inputs:
+                if not TransientAbsorption_inputs:
                     return None
-                first = getattr(myarray_inputs[0], "x" if axis_idx == 1 else "y", None)
-                for m in myarray_inputs[1:]:
+                first = getattr(TransientAbsorption_inputs[0], "x" if axis_idx == 1 else "y", None)
+                for m in TransientAbsorption_inputs[1:]:
                     other_coord = getattr(m, "x" if axis_idx == 1 else "y", None)
                     if first is None or other_coord is None:
                         return None
@@ -622,8 +622,8 @@ class MyArray(np.ndarray):
                 new_x = None
                 new_y = None
 
-            # Now wrap result as MyArray and attach coords (safe types)
-            out = res.view(MyArray)
+            # Now wrap result as TransientAbsorption and attach coords (safe types)
+            out = res.view(TransientAbsorption)
 
             # For 1-D results, ensure coords are 1-D arrays (not scalars) when present.
             if new_x is not None:
@@ -654,7 +654,7 @@ class MyArray(np.ndarray):
         return f"{base}\nmeta: x={coord_repr(getattr(self, 'x', None))}, y={coord_repr(getattr(self, 'y', None))}"
 
     def fit_global_kinetics(
-        self: MyArray,
+        self: TransientAbsorption,
         *args,
         **kwargs,
     ) -> dict:
