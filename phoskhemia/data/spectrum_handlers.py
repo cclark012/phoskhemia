@@ -8,7 +8,7 @@ from scipy.signal import convolve
 #     [3, 3, 3, 3, 3],
 #     [2, 2, 2, 2, 2],
 #     [1, 1, 1, 1, 1]], dtype=float)
-# arr = MyArray(my_array, x=np.linspace(0,4,5), y=np.linspace(0,4,5))
+# arr = TransientAbsorption(my_array, x=np.linspace(0,4,5), y=np.linspace(0,4,5))
 # a = arr.smooth(
 #     window=(5, 5),
 #     mode="same",
