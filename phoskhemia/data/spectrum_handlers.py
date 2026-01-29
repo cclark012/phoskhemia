@@ -1,36 +1,38 @@
 import numpy as np
 import copy
 from scipy.signal import convolve
-
-# my_array = np.array(
-#     [[1, 1, 1, 1, 1],
-#     [2, 2, 2, 2, 2],
-#     [3, 3, 3, 3, 3],
-#     [2, 2, 2, 2, 2],
-#     [1, 1, 1, 1, 1]], dtype=float)
-# arr = TransientAbsorption(my_array, x=np.linspace(0,4,5), y=np.linspace(0,4,5))
-# a = arr.smooth(
-#     window=(5, 5),
-#     mode="same",
-# )
-# print(a)
-
-
+from numpy.typing import NDArray
+from typing import Callable, Any
 
 class _AddWithMode:
-    def __init__(self, obj, mode):
+    def __init__(
+            self: _AddWithMode, 
+            obj: TransientAbsorption, 
+            mode: str
+        ) -> None:
         self.obj = obj
         self.mode = mode
-
-def with_mode(obj, mode):
-    return _AddWithMode(obj, mode)
-
-
 class TransientAbsorption(np.ndarray):
-    __array_priority__ = 1000.0
+    """
+    2-D transient absorption dataset.
 
-    _SUPPORTED_ARRAY_FUNCTIONS = {
-        np.pow,
+    Shape
+    -----
+    (n_times, n_wavelengths)
+
+    Attributes
+    ----------
+    x : ndarray
+        Wavelength axis (length = n_wavelengths)
+    y : ndarray
+        Time axis (length = n_times)
+    """
+
+    __array_priority__: float = 1000.0
+    x: NDArray[np.floating]
+    y: NDArray[np.floating]
+
+    _SUPPORTED_ARRAY_FUNCTIONS: dict = {
         np.mean,
         np.sum,
         np.average,
@@ -41,37 +43,46 @@ class TransientAbsorption(np.ndarray):
     }
 
 
-    def __new__(cls, input_array, x=None, y=None, dtype=float):
-        arr = np.asarray(input_array, dtype=dtype)
+    def __new__(
+            cls: TransientAbsorption, 
+            input_array: NDArray[np.floating], 
+            x: NDArray[np.floating] | None=None, 
+            y: NDArray[np.floating] | None=None, 
+            dtype: type=float
+        ) -> TransientAbsorption:
+
+        arr: NDArray[np.floating] = np.asarray(input_array, dtype=dtype)
 
         # If 1-D, decide whether user meant a row (1 x N) or a column (N x 1).
         if arr.ndim == 1:
-            n = arr.size
+            n: int = arr.size
             # If x provided and its length matches n -> treat as row (1 x n)
             if x is not None and len(np.asarray(x)) == n:
-                arr = arr.reshape(1, n)
+                arr: NDArray[np.floating] = arr.reshape(1, n)
             # Else if y provided and its length matches n -> treat as column (n x 1)
             elif y is not None and len(np.asarray(y)) == n:
-                arr = arr.reshape(n, 1)
+                arr: NDArray[np.floating] = arr.reshape(n, 1)
             else:
                 # default: treat as a single row 1 x n
-                arr = arr.reshape(1, -1)
+                arr: NDArray[np.floating] = arr.reshape(1, -1)
 
         # Now arr must be 2-D
         if arr.ndim != 2:
             raise ValueError("TransientAbsorption requires a 2-D array (or 1-D which will become 1xN or Nx1).")
 
-        obj = arr.view(cls)
+        obj: TransientAbsorption = arr.view(cls)
+        nrows: int
+        ncols: int
         nrows, ncols = obj.shape
 
         # Create default coords when missing
         if x is None:
-            x = np.arange(ncols, dtype=float)
+            x: NDArray[np.floating] = np.arange(ncols, dtype=float)
         if y is None:
-            y = np.arange(nrows, dtype=float)
+            y: NDArray[np.floating] = np.arange(nrows, dtype=float)
 
-        x = np.asarray(x, dtype=float)
-        y = np.asarray(y, dtype=float)
+        x: NDArray[np.floating] = np.asarray(x, dtype=float)
+        y: NDArray[np.floating] = np.asarray(y, dtype=float)
 
         if x.ndim != 1 or y.ndim != 1:
             raise ValueError("x and y must be 1-D arrays")
@@ -83,24 +94,40 @@ class TransientAbsorption(np.ndarray):
 
         object.__setattr__(obj, "x", x)
         object.__setattr__(obj, "y", y)
+        obj._validate()
         return obj
 
-    def __array_finalize__(self, obj):
+    def _validate(self: TransientAbsorption) -> None:
+        if self.ndim != 2:
+            raise ValueError("TransientAbsorption must be 2D")
+        if self.shape != (len(self.y), len(self.x)):
+            raise ValueError("Data/axis mismatch")
+
+    def __array_finalize__(
+            self: TransientAbsorption, 
+            obj: TransientAbsorption | None
+            ) -> None:
+
         if obj is None:
             return
         object.__setattr__(self, "x", copy.copy(getattr(obj, "x", None)))
         object.__setattr__(self, "y", copy.copy(getattr(obj, "y", None)))
 
     def smooth(
-        self,
-        window,
+        self: TransientAbsorption,
+        window: int | NDArray[np.floating] | tuple[int, int],
         *,
-        normalize=True,
-        separable_tol=1e-10,
+        normalize: bool=True,
+        separable_tol: float=1e-10,
         **kwargs,
-    ):
+    ) -> TransientAbsorption:
         """
         Smooth data using scipy.signal.convolve.
+        Notes
+        -----
+        Axis conventions:
+            axis 0 → time (y)
+            axis 1 → wavelength (x)
 
         Parameters
         ----------
@@ -113,135 +140,125 @@ class TransientAbsorption(np.ndarray):
             Normalize the window so it sums to 1.
         separable_tol : float
             Relative tolerance for separable-kernel detection.
-        **convolve_kwargs
+        **kwargs
             Passed directly to scipy.signal.convolve
             (e.g. mode='same', method='auto')
         """
-        kwargs = {"mode": "same", "method": "auto"} | kwargs
+        kwargs: dict = {"mode": "same", "method": "auto"} | kwargs
 
-        data = np.asarray(self, dtype=float)
+        data: NDArray[np.floating] = np.asarray(self, dtype=float)
 
-        # -------------------------------------------------
         # Build kernel
-        # -------------------------------------------------
         if isinstance(window, int):
             if window <= 0:
                 raise ValueError("window length must be positive")
-            kernel = np.ones((1, window), dtype=float)
+            kernel: NDArray[np.floating] = np.ones((1, window), dtype=float)
 
         elif isinstance(window, tuple | list):
             if len(window) != 2:
                 raise ValueError("window tuple must be (ny, nx)")
-            kernel = np.ones(window, dtype=float)
+            kernel: NDArray[np.floating] = np.ones(window, dtype=float)
 
         else:
-            kernel = np.asarray(window, dtype=float)
+            kernel: NDArray[np.floating] = np.asarray(window, dtype=float)
             if kernel.ndim == 1:
                 kernel = kernel.reshape(1, -1)
             elif kernel.ndim != 2:
                 raise ValueError("window must be int, 1-D, or 2-D")
 
+        ny: int
+        nx: int
         ny, nx = kernel.shape
 
         if normalize:
-            s = kernel.sum()
+            s: float = kernel.sum()
             if s != 0:
                 kernel = kernel / s
 
-        # -------------------------------------------------
         # 1-D smoothing along x
-        # -------------------------------------------------
         if ny == 1 and nx > 1:
-            h = kernel.ravel()
-            out = convolve(data, h[None, :], **kwargs)
+            h: NDArray[np.floating] = kernel.ravel()
+            out: NDArray[np.floating] = convolve(data, h[None, :], **kwargs)
 
-        # -------------------------------------------------
         # 1-D smoothing along y
-        # -------------------------------------------------
         elif ny > 1 and nx == 1:
-            v = kernel.ravel()
-            out = convolve(data, v[:, None], **kwargs)
+            v: NDArray[np.floating] = kernel.ravel()
+            out: NDArray[np.floating] = convolve(data, v[:, None], **kwargs)
 
-        # -------------------------------------------------
         # 2-D smoothing
-        # -------------------------------------------------
         else:
             # Attempt separable acceleration
+            U: NDArray[np.floating]
+            S: NDArray[np.floating]
+            Vt: NDArray[np.floating]
             U, S, Vt = np.linalg.svd(kernel, full_matrices=False)
-            separable = S.size > 1 and S[1] / S[0] < separable_tol
+            separable: bool = S.size > 1 and S[1] / S[0] < separable_tol
 
             if separable:
-                v = U[:, 0] * np.sqrt(S[0])
-                h = Vt[0, :] * np.sqrt(S[0])
+                v: NDArray[np.floating] = U[:, 0] * np.sqrt(S[0])
+                h: NDArray[np.floating] = Vt[0, :] * np.sqrt(S[0])
 
-                tmp = convolve(data, v[:, None], **kwargs)
-                out = convolve(tmp, h[None, :], **kwargs)
+                tmp: NDArray[np.floating] = convolve(data, v[:, None], **kwargs)
+                out: NDArray[np.floating] = convolve(tmp, h[None, :], **kwargs)
 
             else:
-                out = convolve(data, kernel, **kwargs)
+                out: NDArray[np.floating] = convolve(data, kernel, **kwargs)
 
-        result = out.view(TransientAbsorption)
+        result: TransientAbsorption = out.view(TransientAbsorption)
         result.x = self.x
         result.y = self.y
 
         return result
 
     @staticmethod
-    def _convolve_loop(out_shape, ny, nx, compute_fn):
-        """
-        Canonical convolution loop over output indices.
-
-        compute_fn(ip, jp) must return the convolution value
-        for output index (ip, jp).
-        """
-        H, W = out_shape
-        out = np.zeros((H, W), dtype=float)
-
-        for ip in range(H):
-            for jp in range(W):
-                out[ip, jp] = compute_fn(ip, jp)
-
-        return out
-
-    @staticmethod
-    def _infer_spacing(axis):
-        axis = np.asarray(axis, dtype=float)
+    def _infer_spacing(axis: NDArray[np.floating]) -> float | None:
+        axis: NDArray[np.floating] = np.asarray(axis, dtype=float)
         if axis.size < 2:
             return None
-        diffs = np.diff(axis)
-        return np.mean(diffs)
+        diffs: NDArray[np.floating] = np.diff(axis)
+        return float(np.mean(diffs))
 
     @staticmethod
-    def _continuous_axis(a, b, tol=1e-8):
-        a = np.asarray(a, dtype=float)
-        b = np.asarray(b, dtype=float)
-        dx_a = TransientAbsorption._infer_spacing(a)
-        dx_b = TransientAbsorption._infer_spacing(b)
+    def _continuous_axis(
+            a: NDArray[np.floating], 
+            b: NDArray[np.floating], 
+            tol: float=1e-8
+        ) -> tuple[NDArray[np.floating], float | None]:
+
+        a: NDArray[np.floating] = np.asarray(a, dtype=float)
+        b: NDArray[np.floating] = np.asarray(b, dtype=float)
+        dx_a: float | None = TransientAbsorption._infer_spacing(a)
+        dx_b: float | None = TransientAbsorption._infer_spacing(b)
 
         if dx_a is not None and dx_b is not None:
             if not np.isclose(dx_a, dx_b, rtol=1e-6, atol=1e-9):
                 raise ValueError(f"Axis spacings differ: {dx_a} vs {dx_b}")
-            dx = 0.5 * (dx_a + dx_b)
-        else:
-            dx = dx_a if dx_a is not None else dx_b
+            dx: float = 0.5 * (dx_a + dx_b)
 
-        start = min(a[0], b[0])
-        stop = max(a[-1], b[-1])
+        else:
+            dx: float | None = dx_a if dx_a is not None else dx_b
+
+        start: float = min(a[0], b[0])
+        stop: float = max(a[-1], b[-1])
 
         if dx is None:
             if np.isclose(start, stop, atol=tol):
                 return np.array([start], dtype=float), None
+
             else:
-                axis = np.array([start, stop], dtype=float)
+                axis: NDArray[np.floating] = np.array([start, stop], dtype=float)
                 return axis, stop - start
 
-        n = int(round((stop - start) / dx)) + 1
-        axis = start + dx * np.arange(n)
+        n: int = int(round((stop - start) / dx)) + 1
+        axis: NDArray[np.floating] = start + dx * np.arange(n)
         if not np.isclose(axis[-1], stop, rtol=1e-8, atol=1e-12):
-            axis = np.append(axis, stop)
+            axis: NDArray[np.floating] = np.append(axis, stop)
         return axis, dx
 
-    def _group_and_average_columns(self, cols):
+    def _group_and_average_columns(
+            self: TransientAbsorption, 
+            cols: list[tuple[float, tuple[float, ...]]]
+        ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
         """
         cols: list of tuples (x_value(float), column_tuple_of_floats)
         returns (x_new_array, vals_matrix) with duplicated x's averaged.
@@ -250,43 +267,48 @@ class TransientAbsorption(np.ndarray):
             return np.array([], dtype=float), np.zeros((0,0), dtype=float)
 
         # sort by x then by column values (deterministic)
-        cols_sorted = sorted(cols, key=lambda t: (t[0], t[1]))
+        cols_sorted: list[tuple[float, tuple[float, ...]]] = sorted(cols, key=lambda t: (t[0], t[1]))
 
         # group consecutive entries with same x (isclose)
-        xs = [c[0] for c in cols_sorted]
-        cols_vals = [np.array(c[1], dtype=float) for c in cols_sorted]
+        xs: list[float] = [c[0] for c in cols_sorted]
+        cols_vals: list[NDArray[np.floating]] = [np.array(c[1], dtype=float) for c in cols_sorted]
 
-        groups = []
-        current_group_idx = 0
-        current_group = [cols_vals[0]]
-        current_xs = [xs[0]]
+        groups: list[tuple[list[float], list[NDArray[np.floating]]]] = []
+        current_group_idx: int = 0
+        current_group: list[NDArray[np.floating]] = [cols_vals[0]]
+        current_xs: list[float] = [xs[0]]
 
         for xi, ci in zip(xs[1:], cols_vals[1:]):
             if np.isclose(xi, current_xs[-1], atol=1e-8, rtol=1e-6):
                 current_group.append(ci)
                 current_xs.append(xi)
+
             else:
                 groups.append((current_xs, current_group))
                 current_group_idx += 1
                 current_group = [ci]
                 current_xs = [xi]
+
         groups.append((current_xs, current_group))
 
         # For each group compute mean x and mean column (averaging duplicates)
-        averaged_cols = []
-        averaged_xs = []
+        averaged_cols: list[NDArray[np.floating]] = []
+        averaged_xs: list[float] = []
         for x_group, col_group in groups:
             # stack columns (shape (n_members, nrows)) -> average along axis=0 yields (nrows,)
-            stacked = np.vstack(col_group)  # shape (n_members, nrows)
-            mean_col = np.mean(stacked, axis=0)
-            mean_x = float(np.mean(x_group))
+            stacked: NDArray[np.floating] = np.vstack(col_group)  # shape (n_members, nrows)
+            mean_col: NDArray[np.floating] = np.mean(stacked, axis=0)
+            mean_x: float = float(np.mean(x_group))
             averaged_xs.append(mean_x)
             averaged_cols.append(mean_col)
 
-        vals = np.column_stack(averaged_cols) if averaged_cols else np.zeros((stacked.shape[1], 0))
+        vals: NDArray[np.floating] = np.column_stack(averaged_cols) if averaged_cols else np.zeros((stacked.shape[1], 0))
         return np.array(averaged_xs, dtype=float), vals
 
-    def _group_and_average_rows(self, rows):
+    def _group_and_average_rows(
+            self: TransientAbsorption, 
+            rows: list[tuple[float, tuple[float, ...]]]
+        ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
         """
         rows: list of tuples (y_value(float), row_tuple_of_floats)
         returns (y_new_array, vals_matrix) with duplicated y's averaged.
@@ -294,38 +316,45 @@ class TransientAbsorption(np.ndarray):
         if not rows:
             return np.array([], dtype=float), np.zeros((0,0), dtype=float)
 
-        rows_sorted = sorted(rows, key=lambda t: (t[0], t[1]))
+        rows_sorted: list[tuple[float, tuple[float, ...]]] = sorted(rows, key=lambda t: (t[0], t[1]))
 
-        ys = [r[0] for r in rows_sorted]
-        rows_vals = [np.array(r[1], dtype=float) for r in rows_sorted]
+        ys: list[float] = [r[0] for r in rows_sorted]
+        rows_vals: list[NDArray[np.floating]] = [np.array(r[1], dtype=float) for r in rows_sorted]
 
-        groups = []
-        current_group = [rows_vals[0]]
-        current_ys = [ys[0]]
-
+        groups: list[tuple[list[float], list[NDArray[np.floating]]]] = []
+        current_group: list[NDArray[np.floating]] = [rows_vals[0]]
+        current_ys: list[float] = [ys[0]]
         for yi, ri in zip(ys[1:], rows_vals[1:]):
             if np.isclose(yi, current_ys[-1], atol=1e-8, rtol=1e-6):
                 current_group.append(ri)
                 current_ys.append(yi)
+
             else:
                 groups.append((current_ys, current_group))
                 current_group = [ri]
                 current_ys = [yi]
+
         groups.append((current_ys, current_group))
 
-        averaged_rows = []
-        averaged_ys = []
+        averaged_rows: list[NDArray[np.floating]] = []
+        averaged_ys: list[float] = []
         for y_group, row_group in groups:
-            stacked = np.vstack(row_group)  # shape (n_members, ncols)
-            mean_row = np.mean(stacked, axis=0)
-            mean_y = float(np.mean(y_group))
+            stacked: NDArray[np.floating] = np.vstack(row_group)  # shape (n_members, ncols)
+            mean_row: NDArray[np.floating] = np.mean(stacked, axis=0)
+            mean_y: float = float(np.mean(y_group))
             averaged_ys.append(mean_y)
             averaged_rows.append(mean_row)
 
-        vals = np.vstack(averaged_rows) if averaged_rows else np.zeros((0, stacked.shape[1]))
+        vals: NDArray[np.floating] = np.vstack(averaged_rows) if averaged_rows else np.zeros((0, stacked.shape[1]))
         return np.array(averaged_ys, dtype=float), vals
 
-    def combine_with(self, other, fill_value=0.0, mode="average"):
+    def combine_with(
+            self: TransientAbsorption, 
+            other: TransientAbsorption, 
+            fill_value: float=0.0, 
+            mode: str="average"
+        ) -> TransientAbsorption:
+
         if not isinstance(other, TransientAbsorption):
             raise TypeError("combine_with expects another TransientAbsorption")
 
@@ -335,21 +364,27 @@ class TransientAbsorption(np.ndarray):
         if mode == "concat":
             # concat along x if y match exactly — build columns and average duplicates by x
             if np.array_equal(self.y, other.y):
-                cols = []
+                cols: list[tuple[float, tuple[float, ...]]] = []
                 for x_val, col in zip(self.x, np.asarray(self).T):
                     cols.append((float(x_val), tuple(map(float, col))))
                 for x_val, col in zip(other.x, np.asarray(other).T):
                     cols.append((float(x_val), tuple(map(float, col))))
+                x_new: NDArray[np.floating]
+                vals: NDArray[np.floating]
                 x_new, vals = self._group_and_average_columns(cols)
                 return TransientAbsorption(vals, x=x_new, y=copy.copy(self.y))
 
             # concat along y if x match exactly — build rows and average duplicates by y
             if np.array_equal(self.x, other.x):
-                rows = []
+                rows: list[tuple[float, tuple[float, ...]]] = []
                 for y_val, row in zip(self.y, np.asarray(self)):
                     rows.append((float(y_val), tuple(map(float, row))))
+
                 for y_val, row in zip(other.y, np.asarray(other)):
                     rows.append((float(y_val), tuple(map(float, row))))
+
+                y_new: NDArray[np.floating]
+                vals: NDArray[np.floating]
                 y_new, vals = self._group_and_average_rows(rows)
                 return TransientAbsorption(vals, x=copy.copy(self.x), y=y_new)
 
@@ -359,22 +394,42 @@ class TransientAbsorption(np.ndarray):
                 "either self.y == other.y (concat columns) or self.x == other.x (concat rows)."
             )
 
-        # ---------- average mode (unchanged) ----------
+        # average mode
+        x_new: NDArray[np.floating]
+        y_new: NDArray[np.floating]
+        dx: float | None
+        dy: float | None
         x_new, dx = self._continuous_axis(self.x, other.x)
         y_new, dy = self._continuous_axis(self.y, other.y)
 
-        new_vals_sum = np.full((len(y_new), len(x_new)), 0.0, dtype=float)
-        new_counts = np.zeros_like(new_vals_sum, dtype=float)
+        new_vals_sum: NDArray[np.floating] = np.full((len(y_new), len(x_new)), 0.0, dtype=float)
+        new_counts: NDArray[np.floating] = np.zeros_like(new_vals_sum, dtype=float)
 
-        def find_index(axis, val):
+        def find_index(
+                axis: NDArray[np.floating], 
+                val: float
+            ) -> int:
+
             idx = np.flatnonzero(np.isclose(axis, val, atol=1e-8, rtol=1e-6))
             if idx.size == 0:
                 idx = np.array([int(np.argmin(np.abs(axis - val)))])
+
             return int(idx[0])
 
-        def place_into(acc_sum, acc_count, src, src_x, src_y):
-            x0 = find_index(x_new, src_x[0])
-            y0 = find_index(y_new, src_y[0])
+        def place_into(
+                acc_sum: NDArray[np.floating], 
+                acc_count: NDArray[np.floating], 
+                src: TransientAbsorption, 
+                src_x: NDArray[np.floating], 
+                src_y: NDArray[np.floating]
+            ) -> None:
+
+            x0: int = find_index(x_new, src_x[0])
+            y0: int = find_index(y_new, src_y[0])
+            r0: int
+            c0: int
+            r1: int
+            c1: int
             r0, r1 = y0, y0 + src.shape[0]
             c0, c1 = x0, x0 + src.shape[1]
             acc_sum[r0:r1, c0:c1] += np.asarray(src, dtype=float)
@@ -388,15 +443,25 @@ class TransientAbsorption(np.ndarray):
 
         return TransientAbsorption(averaged, x=x_new, y=y_new)
 
-    def add(self, other, mode="average", fill_value=0.0):
+    def add(
+            self: TransientAbsorption, 
+            other: TransientAbsorption, 
+            mode: str="average", 
+            fill_value: float=0.0
+        ) -> TransientAbsorption:
+
         if mode in ("average", "concat"):
             return self.combine_with(other, fill_value=fill_value, mode=mode)
+
         raise ValueError("mode must be 'average' or 'concat'")
 
-    def __add__(self, other):
-        # wrapper carrying mode?
+    def __add__(
+            self: TransientAbsorption, 
+            other: TransientAbsorption | _AddWithMode
+        ) -> TransientAbsorption:
+
         if isinstance(other, _AddWithMode):
-            target = other.obj
+            target: TransientAbsorption = other.obj
             mode = other.mode
             if not isinstance(target, TransientAbsorption):
                 return NotImplemented
@@ -405,32 +470,44 @@ class TransientAbsorption(np.ndarray):
         # non-TransientAbsorption (scalar or ndarray)
         if not isinstance(other, TransientAbsorption):
             try:
-                res = np.asarray(np.asarray(self) + other)
-                out = res.view(TransientAbsorption)
+                res: NDArray[np.floating] = np.asarray(np.asarray(self) + other)
+                out: TransientAbsorption = res.view(TransientAbsorption)
                 object.__setattr__(out, "x", copy.copy(self.x))
                 object.__setattr__(out, "y", copy.copy(self.y))
                 return out
+
             except Exception:
                 return NotImplemented
 
         # both TransientAbsorption -> default CONCAT (order-independent due to grouping+averaging)
         return self.combine_with(other, fill_value=0.0, mode="concat")
 
-    def __radd__(self, other):
+    def __radd__(
+            self: TransientAbsorption, 
+            other: TransientAbsorption | _AddWithMode
+        ) -> TransientAbsorption:
+
         if isinstance(other, _AddWithMode):
-            target = other.obj
-            mode = other.mode
+            target: TransientAbsorption = other.obj
+            mode: str = other.mode
             if not isinstance(target, TransientAbsorption):
                 return NotImplemented
             return target.combine_with(self, fill_value=0.0, mode=mode)
         return self.__add__(other)
 
-    def __getitem__(self, key):
+    def __getitem__(
+            self: TransientAbsorption, 
+            key: tuple | int | slice | NDArray[np.integer] | NDArray[np.bool_]
+        ) -> TransientAbsorption:
         """
         Indexing that slices data and coordinates consistently and robustly.
         Handles cases where self.x or self.y may be None (e.g. after reductions).
+        Returns a TransientAbsorption view when possible; scalar results are
+        wrapped as 0-D TransientAbsorption arrays.
         """
         # Normalize key into (row_idx, col_idx)
+        row_idx: int | slice | NDArray[np.integer] | NDArray[np.bool_]
+        col_idx: int | slice | NDArray[np.integer] | NDArray[np.bool_]
         if isinstance(key, tuple):
             if len(key) == 2:
                 row_idx, col_idx = key
@@ -442,16 +519,20 @@ class TransientAbsorption(np.ndarray):
             row_idx, col_idx = key, slice(None)
 
         # Perform numeric indexing
-        result = super().__getitem__(key)
+        result: NDArray[np.floating] = super().__getitem__(key)
 
         # Convert scalars to 0-D array so subclass is preserved
         if not isinstance(result, np.ndarray):
-            result = np.array(result)
+            result: NDArray[np.floating] = np.array(result)
 
-        out = result.view(TransientAbsorption)
+        out: TransientAbsorption = result.view(TransientAbsorption)
 
         # Helper to safely slice coordinate arrays (returns None if coord is None)
-        def slice_coord(coord, idx):
+        def slice_coord(
+                coord: NDArray[np.floating] | None, 
+                idx: int | slice | NDArray[np.integer] | NDArray[np.bool_]
+            ) -> NDArray[np.floating] | None:
+
             if coord is None:
                 return None
             # Integer index -> scalar
@@ -464,10 +545,10 @@ class TransientAbsorption(np.ndarray):
             return np.asarray(coord[idx])
 
         # Initialize new_x/new_y before use
-        new_x = None
-        new_y = None
+        new_x: NDArray[np.floating] | None = None
+        new_y: NDArray[np.floating] | None = None
 
-        ndim = out.ndim
+        ndim: int = out.ndim
         if ndim == 2:
             new_y = slice_coord(self.y, row_idx)
             new_x = slice_coord(self.x, col_idx)
@@ -511,13 +592,20 @@ class TransientAbsorption(np.ndarray):
         object.__setattr__(out, "y", new_y)
         return out
 
-    def __array_function__(self, func, types, args, kwargs):
+    def __array_function__(
+        self: TransientAbsorption,
+        func: Callable[..., Any],
+        types: tuple[type, ...],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any] | None,
+    ) -> Any:
+
         if func not in TransientAbsorption._SUPPORTED_ARRAY_FUNCTIONS:
             return NotImplemented
 
         # convert TransientAbsorption in args to ndarray and remember TransientAbsorption inputs
-        numeric_args = []
-        TransientAbsorption_inputs = []
+        numeric_args: list = []
+        TransientAbsorption_inputs: list = []
         for a in args:
             if isinstance(a, TransientAbsorption):
                 numeric_args.append(np.asarray(a))
@@ -530,7 +618,7 @@ class TransientAbsorption(np.ndarray):
             if isinstance(v, TransientAbsorption):
                 return np.asarray(v)
             if isinstance(v, (list, tuple)):
-                t = type(v)
+                t: type = type(v)
                 return t(_convert_kwval(x) for x in v)
             if isinstance(v, dict):
                 return {kk: _convert_kwval(vv) for kk, vv in v.items()}
@@ -539,19 +627,19 @@ class TransientAbsorption(np.ndarray):
         numeric_kwargs = {k: _convert_kwval(v) for k, v in (kwargs or {}).items()}
 
         # find axis (if not provided in kwargs, try positional)
-        axis = kwargs.get("axis", None) if kwargs is not None else None
+        axis: int | tuple[int, ...] | None = kwargs.get("axis", None) if kwargs is not None else None
         if axis is None and len(args) >= 2:
-            possible_axis = args[1]
+            possible_axis: object = args[1]
             if isinstance(possible_axis, (int, tuple, list)):
                 axis = possible_axis
 
         # call numpy implementation
-        result = func(*numeric_args, **numeric_kwargs)
+        result: object = func(*numeric_args, **numeric_kwargs)
 
         # support functions that return tuples (e.g. returned=True)
-        returned_tuple = isinstance(result, tuple)
-        results_list = list(result) if returned_tuple else [result]
-        wrapped_results = []
+        returned_tuple: bool = isinstance(result, tuple)
+        results_list: list = list(result) if returned_tuple else [result]
+        wrapped_results: list = []
 
         for res in results_list:
             # non-array scalar -> return as-is
@@ -560,57 +648,70 @@ class TransientAbsorption(np.ndarray):
                 continue
 
             # helper: normalize axis description to tuple of axes
-            def _normalize_axis(ax, ndim):
+            def _normalize_axis(
+                    ax: int | tuple[int, ...] | list[int] | None,
+                    ndim: int
+                ) -> tuple[int, ...]:
+
                 if ax is None:
                     return tuple(range(ndim))
+
                 if isinstance(ax, (list, tuple)):
-                    ax_t = tuple(((i + ndim) if i < 0 else i) for i in ax)
+                    ax_t: tuple[int, ...] = tuple(((i + ndim) if i < 0 else i) for i in ax)
                     return ax_t
-                ai = int(ax)
+
+                ai: int = int(ax)
                 if ai < 0:
                     ai = ai + ndim
+
                 return (ai,)
 
-            orig_ndim = self.ndim
-            reduced_axes = _normalize_axis(axis, orig_ndim)
-            surviving_axes = [i for i in range(orig_ndim) if i not in reduced_axes]
+            orig_ndim: int = self.ndim
+            reduced_axes: tuple[int, ...] = _normalize_axis(axis, orig_ndim)
+            surviving_axes: list[int] = [i for i in range(orig_ndim) if i not in reduced_axes]
 
             # helper: find a common coordinate for axis_idx among all TransientAbsorption inputs, otherwise None
-            def _common_coord_for_axis(axis_idx):
+            def _common_coord_for_axis(
+                    axis_idx: int
+                ) -> NDArray[np.floating] | None:
+
                 if not TransientAbsorption_inputs:
                     return None
-                first = getattr(TransientAbsorption_inputs[0], "x" if axis_idx == 1 else "y", None)
+
+                first: NDArray[np.floating] | None = getattr(TransientAbsorption_inputs[0], "x" if axis_idx == 1 else "y", None)
                 for m in TransientAbsorption_inputs[1:]:
                     other_coord = getattr(m, "x" if axis_idx == 1 else "y", None)
                     if first is None or other_coord is None:
                         return None
+
                     if not np.array_equal(np.asarray(first), np.asarray(other_coord)):
                         return None
+
                 return first
 
             # Decide what coords survive and normalize them into the canonical types:
             # - for 2-D result: x,y -> 1-D np.ndarray or None
             # - for 1-D result: one surviving coord -> 1-D np.ndarray (not scalar) for convenience
             # - for 0-D result: coords set to None (keeping NumPy scalar semantics)
-            new_x = None
-            new_y = None
+            new_x: NDArray[np.floating] | None = None
+            new_y: NDArray[np.floating] | None = None
 
             if res.ndim == 2:
-                cand_x = _common_coord_for_axis(1)
-                cand_y = _common_coord_for_axis(0)
+                cand_x: NDArray[np.floating] | None = _common_coord_for_axis(1)
+                cand_y: NDArray[np.floating] | None = _common_coord_for_axis(0)
                 new_x = np.asarray(cand_x) if cand_x is not None else None
                 new_y = np.asarray(cand_y) if cand_y is not None else None
 
             elif res.ndim == 1:
                 # single axis survived — map which axis it is
                 if len(surviving_axes) == 1:
-                    surv = surviving_axes[0]
+                    surv: int = surviving_axes[0]
                     if surv == 1:
-                        cand_x = _common_coord_for_axis(1)
+                        cand_x: NDArray[np.floating] | None = _common_coord_for_axis(1)
                         new_x = np.asarray(cand_x) if cand_x is not None else None
                         new_y = None
                     else:
-                        cand_y = _common_coord_for_axis(0)
+                        cand_y: NDArray[np.floating] | None = _common_coord_for_axis(0)
                         new_y = np.asarray(cand_y) if cand_y is not None else None
                         new_x = None
                 else:
@@ -623,7 +724,7 @@ class TransientAbsorption(np.ndarray):
                 new_y = None
 
             # Now wrap result as TransientAbsorption and attach coords (safe types)
-            out = res.view(TransientAbsorption)
+            out: TransientAbsorption = res.view(TransientAbsorption)
 
             # For 1-D results, ensure coords are 1-D arrays (not scalars) when present.
             if new_x is not None:
@@ -640,17 +741,24 @@ class TransientAbsorption(np.ndarray):
 
         return tuple(wrapped_results) if returned_tuple else wrapped_results[0]
 
-    def __repr__(self):
-        base = super().__repr__()
+    def __repr__(
+            self: TransientAbsorption
+        ) -> str:
+        base: str = super().__repr__()
         # present coords cleanly and avoid indexing None or scalar coords
-        def coord_repr(c):
+        def coord_repr(
+                c:NDArray[np.floating] | float | None
+            ) -> str:
+
             if c is None:
                 return "None"
             # convert 0-d numpy scalars into Python scalars for nicer display
-            arr = np.asarray(c)
+            arr: NDArray[np.floating] = np.asarray(c)
             if arr.ndim == 0:
                 return repr(arr.item())
+
             return repr(arr)
+
         return f"{base}\nmeta: x={coord_repr(getattr(self, 'x', None))}, y={coord_repr(getattr(self, 'y', None))}"
 
     def fit_global_kinetics(
