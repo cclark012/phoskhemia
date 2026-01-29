@@ -237,13 +237,14 @@ def akaike_information_criterion(
     return AIClikelihood + correction
 
 def compute_diagnostics(
-    y_obs,
-    y_fit,
-    noise,
-    n_params,
-):
+        *,
+        y_obs: NDArray[np.floating],
+        y_fit: NDArray[np.floating],
+        noise: NDArray[np.floating],
+        n_params: int,
+    ) -> dict[str, float]:
     """
-    Compute statistical diagnostics for global fit.
+    Compute statistical diagnostics for a global kinetic fit.
 
     Parameters
     ----------
@@ -259,29 +260,54 @@ def compute_diagnostics(
     Returns
     -------
     diagnostics : dict
+        {
+            "chi2": float,
+            "chi2_red": float,
+            "R2": float,
+            "AIC": float,
+            "AICc": float,
+            "dof": int,
+        }
     """
 
+    y_obs = np.asarray(y_obs, dtype=float)
+    y_fit = np.asarray(y_fit, dtype=float)
+    noise = np.asarray(noise, dtype=float)
+
+    if y_obs.shape != y_fit.shape:
+        raise ValueError("y_obs and y_fit must have the same shape")
+
+    if noise.shape != y_obs.shape:
+        raise ValueError("noise must match y_obs shape")
+
+    if np.any(noise <= 0):
+        raise ValueError("noise must be strictly positive for diagnostics")
+
+    N: int = y_obs.size
+    p: int = int(n_params)
+    dof: int = max(N - p, 1)
+
+    # Residuals
     resid = y_obs - y_fit
     wresid = resid / noise
 
-    N = y_obs.size
-    p = n_params
-    dof = max(N - p, 1)
-
-    chi2 = np.sum(wresid**2)
-    chi2_red = chi2 / dof
+    # Chi-squared
+    chi2: float = float(np.sum(wresid * wresid))
+    chi2_red: float = chi2 / dof
 
     # R^2 (unweighted, descriptive only)
-    ss_res = np.sum(resid**2)
-    ss_tot = np.sum((y_obs - y_obs.mean())**2)
-    R2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
+    ss_res = float(np.sum(resid * resid))
+    ss_tot = float(np.sum((y_obs - y_obs.mean()) ** 2))
+    R2: float = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
 
-    # AIC and AICc
-    AIC = 2 * p + chi2
+    # Information criteria (Gaussian likelihood)
+    AIC: float = chi2 + 2 * p
     if N > p + 1:
-        AICc = AIC + (2 * p * (p + 1)) / (N - p - 1)
+        AICc: float = AIC + (2 * p * (p + 1)) / (N - p - 1)
     else:
-        AICc = np.nan
+        AICc: float = float("nan")
+
+    BIC: float = chi2 + p * np.log(N)
 
     return {
         "chi2": chi2,
@@ -289,6 +315,7 @@ def compute_diagnostics(
         "R2": R2,
         "AIC": AIC,
         "AICc": AICc,
+        "BIC": BIC,
         "dof": dof,
     }
 
