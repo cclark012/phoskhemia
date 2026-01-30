@@ -13,7 +13,7 @@ def fit_global_kinetics(
         kinetic_model: KineticModel,
         beta0: NDArray[np.floating],
         *,
-        noise: NDArray[np.floating] | None = None,
+        noise: NDArray[np.floating] | float | None = None,
         lam: float = 1e-12,
         propagate_kinetic_uncertainty: bool = False,
         debug: bool = False,
@@ -58,6 +58,8 @@ def fit_global_kinetics(
     # Default to unity noise if none provided
     if noise is None:
         noise: NDArray[np.floating] = np.ones(n_wl, dtype=float)
+    elif isinstance(noise, float | int):
+        noise: NDArray[np.floating] = noise * np.ones(n_wl, dtype=float)
     else:
         noise: NDArray[np.floating] = np.asarray(noise, dtype=float)
         if noise.size != n_wl:
