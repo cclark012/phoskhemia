@@ -1,11 +1,30 @@
 import numpy as np
 from numpy.typing import NDArray
 
-def estimate_noise(arr, tail_fraction=0.2):
-    data = np.asarray(arr)
-    n_tail = int(data.shape[0] * tail_fraction)
-    tail = data[-n_tail:, :]
-    sigma = np.std(tail, axis=0, ddof=1)
+def estimate_noise(
+        arr: NDArray[np.floating], 
+        tail_fraction: float=0.2
+    ) -> float:
+    """    
+    Estimates the noise of a 1D array by smoothing the array 
+    and obtaining the residuals compared to the original data.
+
+    Parameters
+    ----------
+    arr : NDArray[np.floating]
+        1D Array
+    tail_fraction : float, optional
+        Fraction of the end of the array to be used for estimation, by default 0.2
+
+    Returns
+    -------
+    float
+        Estimated noise standard deviation
+    """
+    data: NDArray[np.floating] = np.asarray(arr)
+    n_tail: int = int(data.shape[0] * tail_fraction)
+    tail: NDArray[np.floating] = data[-n_tail:, :]
+    sigma: NDArray[np.floating] = np.std(tail, axis=0, ddof=1)
     sigma[sigma == 0] = np.median(sigma)
     return sigma
 
