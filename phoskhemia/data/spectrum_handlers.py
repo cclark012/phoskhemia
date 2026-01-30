@@ -3,6 +3,7 @@ import copy
 from scipy.signal import convolve
 from numpy.typing import NDArray
 from typing import Callable, Any
+from __future__ import annotations
 
 class _AddWithMode:
     def __init__(
@@ -12,6 +13,7 @@ class _AddWithMode:
         ) -> None:
         self.obj = obj
         self.mode = mode
+
 class TransientAbsorption(np.ndarray):
     """
     2-D transient absorption dataset.
