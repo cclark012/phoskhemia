@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.typing import NDArray
 
-from phoskhemia.data.spectrum_handlers import MyArray
+from phoskhemia.data.spectrum_handlers import TransientAbsorption
 from phoskhemia.fitting.projections import project_amplitudes
 from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.utils.typing import ArrayFloatAny
@@ -320,18 +320,18 @@ def compute_diagnostics(
     }
 
 def compute_residual_maps(
-        arr: MyArray,
+        arr: TransientAbsorption,
         fit_result: dict,
         *,
         noise: NDArray[np.floating] | None = None,
         lam: float = 1e-12,
-    ) -> dict[str, MyArray]:
+    ) -> dict[str, TransientAbsorption]:
     """
     Compute raw and weighted residual maps for a global kinetic fit.
 
     Parameters
     ----------
-    arr : MyArray
+    arr : TransientAbsorption
         Dataset to evaluate (train or test)
     fit_result : dict
         Result returned by fit_global_kinetics
@@ -344,8 +344,8 @@ def compute_residual_maps(
     -------
     residuals : dict
         {
-            "raw": MyArray,
-            "weighted": MyArray | None,
+            "raw": TransientAbsorption,
+            "weighted": TransientAbsorption | None,
         }
     """
 
@@ -393,13 +393,13 @@ def compute_residual_maps(
         fit[:, i] = traces @ coeffs
 
     raw_residuals: NDArray[np.floating] = data - fit
-    raw: MyArray = MyArray(raw_residuals, x=wl, y=times)
+    raw: TransientAbsorption = TransientAbsorption(raw_residuals, x=wl, y=times)
 
     if has_noise:
         weighted_residuals: NDArray[np.floating] = raw_residuals / noise[None, :]
-        weighted: MyArray = MyArray(weighted_residuals, x=wl, y=times)
+        weighted: TransientAbsorption = TransientAbsorption(weighted_residuals, x=wl, y=times)
     else:
-        weighted: MyArray = None
+        weighted: TransientAbsorption = None
 
     return {
         "raw": raw,
@@ -443,7 +443,7 @@ def compare_models(results, criterion="AICc"):
     return table
 
 def cross_validate_wavelengths(
-        arr: MyArray,
+        arr: TransientAbsorption,
         kinetic_model: KineticModel,
         beta0: NDArray[np.floating],
         *,
@@ -457,7 +457,7 @@ def cross_validate_wavelengths(
 
     Parameters
     ----------
-    arr : MyArray
+    arr : TransientAbsorption
         Full dataset
     kinetic_model : KineticModel
         Kinetic model to validate
@@ -512,13 +512,13 @@ def cross_validate_wavelengths(
         train_mask[test_idx] = False
 
         # Mask wavelength block for training set
-        train = MyArray(
+        train = TransientAbsorption(
             data[:, train_mask],
             x=wl[train_mask],
             y=times,
         )
         # Mask everything except the wavelength block for the test set
-        test = MyArray(
+        test = TransientAbsorption(
             data[:, ~train_mask],
             x=wl[~train_mask],
             y=times,
@@ -538,7 +538,7 @@ def cross_validate_wavelengths(
         )
 
         # Compute residuals on test wavelengths
-        resid: dict[str, MyArray] = compute_residual_maps(
+        resid: dict[str, TransientAbsorption] = compute_residual_maps(
             test,
             fit_res,
             noise=noise_test,
