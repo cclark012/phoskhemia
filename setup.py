@@ -11,7 +11,7 @@ with open(path.join(HERE, 'README.md'), encoding='utf-8') as f:
 setup(
     name='phoskhemia',
     packages=find_packages(include=['phoskhemia']),
-    version='0.1.01a',
+    version='0.1.02',
     description='Library for the handling and analysis of chemical spectroscopic data.',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -19,7 +19,8 @@ setup(
     classifiers=[
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
     ],
     include_package_data=True,
     install_requires=[
