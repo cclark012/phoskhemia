@@ -415,6 +415,7 @@ def compare_models(results, criterion="AICc"):
     results : dict[str, dict]
         Mapping name -> fit_result
     criterion : {"AIC", "AICc"}
+        The criterion to compare between models
 
     Returns
     -------
