@@ -26,6 +26,10 @@ class TransientAbsorption(np.ndarray):
         Wavelength axis (length = n_wavelengths)
     y : ndarray
         Time axis (length = n_times)
+    
+    TODO:
+    1) Add functionality for fill_value in add() and combine_with()
+    2) Add downsampling for large datasets
     """
 
     __array_priority__: float = 1000.0
