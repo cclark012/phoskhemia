@@ -1,9 +1,9 @@
+from __future__ import annotations
 import numpy as np
 import copy
 from scipy.signal import convolve
 from numpy.typing import NDArray
 from typing import Callable, Any
-from __future__ import annotations
 
 class _AddWithMode:
     def __init__(
@@ -22,23 +22,28 @@ class TransientAbsorption(np.ndarray):
     -----
     (n_times, n_wavelengths)
 
+    TODO:
+    1) Add functionality for fill_value in add() and combine_with()
+    2) Add downsampling for large datasets
+
     Attributes
     ----------
     x : ndarray
         Wavelength axis (length = n_wavelengths)
     y : ndarray
         Time axis (length = n_times)
+
+    Methods
+    -------
     
-    TODO:
-    1) Add functionality for fill_value in add() and combine_with()
-    2) Add downsampling for large datasets
+
     """
 
     __array_priority__: float = 1000.0
     x: NDArray[np.floating]
     y: NDArray[np.floating]
 
-    _SUPPORTED_ARRAY_FUNCTIONS: dict = {
+    _SUPPORTED_ARRAY_FUNCTIONS: set = {
         np.mean,
         np.sum,
         np.average,
@@ -48,9 +53,8 @@ class TransientAbsorption(np.ndarray):
         np.nanvar,
     }
 
-
     def __new__(
-            cls: TransientAbsorption, 
+            cls, 
             input_array: NDArray[np.floating], 
             x: NDArray[np.floating] | None=None, 
             y: NDArray[np.floating] | None=None, 
@@ -103,14 +107,14 @@ class TransientAbsorption(np.ndarray):
         obj._validate()
         return obj
 
-    def _validate(self: TransientAbsorption) -> None:
+    def _validate(self) -> None:
         if self.ndim != 2:
             raise ValueError("TransientAbsorption must be 2D")
         if self.shape != (len(self.y), len(self.x)):
             raise ValueError("Data/axis mismatch")
 
     def __array_finalize__(
-            self: TransientAbsorption, 
+            self, 
             obj: TransientAbsorption | None
             ) -> None:
 
@@ -120,7 +124,7 @@ class TransientAbsorption(np.ndarray):
         object.__setattr__(self, "y", copy.copy(getattr(obj, "y", None)))
 
     def smooth(
-        self: TransientAbsorption,
+        self,
         window: int | NDArray[np.floating] | tuple[int, int],
         *,
         normalize: bool=True,
@@ -262,7 +266,7 @@ class TransientAbsorption(np.ndarray):
         return axis, dx
 
     def _group_and_average_columns(
-            self: TransientAbsorption, 
+            self, 
             cols: list[tuple[float, tuple[float, ...]]]
         ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
         """
@@ -312,7 +316,7 @@ class TransientAbsorption(np.ndarray):
         return np.array(averaged_xs, dtype=float), vals
 
     def _group_and_average_rows(
-            self: TransientAbsorption, 
+            self, 
             rows: list[tuple[float, tuple[float, ...]]]
         ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
         """
@@ -355,12 +359,39 @@ class TransientAbsorption(np.ndarray):
         return np.array(averaged_ys, dtype=float), vals
 
     def combine_with(
-            self: TransientAbsorption, 
+            self, 
             other: TransientAbsorption, 
             fill_value: float=0.0, 
             mode: str="average"
         ) -> TransientAbsorption:
+        """
+        Combines two TransientAbsorption arrays into one continuous instance.
 
+        Parameters
+        ----------
+        self : TransientAbsorption
+            _description_
+        other : TransientAbsorption
+            _description_
+        fill_value : float, optional
+            _description_, by default 0.0
+        mode : str, optional
+            _description_, by default "average"
+
+        Returns
+        -------
+        TransientAbsorption
+            _description_
+
+        Raises
+        ------
+        TypeError
+            _description_
+        ValueError
+            _description_
+        ValueError
+            _description_
+        """
         if not isinstance(other, TransientAbsorption):
             raise TypeError("combine_with expects another TransientAbsorption")
 
@@ -450,7 +481,7 @@ class TransientAbsorption(np.ndarray):
         return TransientAbsorption(averaged, x=x_new, y=y_new)
 
     def add(
-            self: TransientAbsorption, 
+            self, 
             other: TransientAbsorption, 
             mode: str="average", 
             fill_value: float=0.0
@@ -462,7 +493,7 @@ class TransientAbsorption(np.ndarray):
         raise ValueError("mode must be 'average' or 'concat'")
 
     def __add__(
-            self: TransientAbsorption, 
+            self, 
             other: TransientAbsorption | _AddWithMode
         ) -> TransientAbsorption:
 
@@ -489,7 +520,7 @@ class TransientAbsorption(np.ndarray):
         return self.combine_with(other, fill_value=0.0, mode="concat")
 
     def __radd__(
-            self: TransientAbsorption, 
+            self, 
             other: TransientAbsorption | _AddWithMode
         ) -> TransientAbsorption:
 
@@ -502,7 +533,7 @@ class TransientAbsorption(np.ndarray):
         return self.__add__(other)
 
     def __getitem__(
-            self: TransientAbsorption, 
+            self, 
             key: tuple | int | slice | NDArray[np.integer] | NDArray[np.bool_]
         ) -> TransientAbsorption:
         """
@@ -599,7 +630,7 @@ class TransientAbsorption(np.ndarray):
         return out
 
     def __array_function__(
-        self: TransientAbsorption,
+        self,
         func: Callable[..., Any],
         types: tuple[type, ...],
         args: tuple[Any, ...],
@@ -747,9 +778,7 @@ class TransientAbsorption(np.ndarray):
 
         return tuple(wrapped_results) if returned_tuple else wrapped_results[0]
 
-    def __repr__(
-            self: TransientAbsorption
-        ) -> str:
+    def __repr__(self) -> str:
         base: str = super().__repr__()
         # present coords cleanly and avoid indexing None or scalar coords
         def coord_repr(
@@ -768,9 +797,9 @@ class TransientAbsorption(np.ndarray):
         return f"{base}\nmeta: x={coord_repr(getattr(self, 'x', None))}, y={coord_repr(getattr(self, 'y', None))}"
 
     def fit_global_kinetics(
-        self: TransientAbsorption,
-        *args,
-        **kwargs,
+        self,
+        *args: tuple,
+        **kwargs: dict[str, Any],
     ) -> dict:
         from phoskhemia.fitting.global_fit import fit_global_kinetics
         return fit_global_kinetics(self, *args, **kwargs)
