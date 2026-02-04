@@ -5,15 +5,6 @@ from scipy.signal import convolve
 from numpy.typing import NDArray
 from typing import Callable, Any
 
-class _AddWithMode:
-    def __init__(
-            self: _AddWithMode, 
-            obj: TransientAbsorption, 
-            mode: str
-        ) -> None:
-        self.obj = obj
-        self.mode = mode
-
 class TransientAbsorption(np.ndarray):
     """
     Represents a 2-D transient absorption dataset.
@@ -45,6 +36,7 @@ class TransientAbsorption(np.ndarray):
 
     __array_priority__: float = 1000.0
     _DEBUG: bool = False
+    _COMBINE_MODES: list[str]= ["average", "mean"]
     x: NDArray[np.floating]
     """ 1D array of wavelength values.
     """
@@ -55,6 +47,9 @@ class TransientAbsorption(np.ndarray):
     _SUPPORTED_ARRAY_FUNCTIONS: set = {
         np.all,
         np.any,
+        np.atleast_1d,
+        np.atleast_2d,
+        np.atleast_3d,
         np.argmax,
         np.argmin,
         np.argpartition,
@@ -70,6 +65,7 @@ class TransientAbsorption(np.ndarray):
         np.cumsum,
         np.diagonal,
         np.dot,
+        np.hstack,
         np.max,
         np.mean,
         np.min,
@@ -100,6 +96,7 @@ class TransientAbsorption(np.ndarray):
         np.trace,
         np.transpose,
         np.var,
+        np.vstack,
     }
 
     def __new__(
@@ -319,310 +316,288 @@ class TransientAbsorption(np.ndarray):
 
         return result
 
-    @staticmethod
-    def _infer_spacing(axis: NDArray[np.floating]) -> float | None:
-        """Obtain axis spacing for the combining of two arrays."""
-
-        axis: NDArray[np.floating] = np.asarray(axis, dtype=float)
-        if axis.size < 2:
-            return None
-        diffs: NDArray[np.floating] = np.diff(axis)
-        return float(np.mean(diffs))
-
-    @staticmethod
-    def _continuous_axis(
-            a: NDArray[np.floating], 
-            b: NDArray[np.floating], 
-            tol: float=1e-8
-        ) -> tuple[NDArray[np.floating], float | None]:
-        """Create a continuous axis for two combined arrays."""
-
-        a: NDArray[np.floating] = np.asarray(a, dtype=float)
-        b: NDArray[np.floating] = np.asarray(b, dtype=float)
-        dx_a: float | None = TransientAbsorption._infer_spacing(a)
-        dx_b: float | None = TransientAbsorption._infer_spacing(b)
-
-        if dx_a is not None and dx_b is not None:
-            if not np.isclose(dx_a, dx_b, rtol=1e-6, atol=1e-9):
-                raise ValueError(f"Axis spacings differ: {dx_a} vs {dx_b}")
-            dx: float = 0.5 * (dx_a + dx_b)
-
-        else:
-            dx: float | None = dx_a if dx_a is not None else dx_b
-
-        start: float = min(a[0], b[0])
-        stop: float = max(a[-1], b[-1])
-
-        if dx is None:
-            if np.isclose(start, stop, atol=tol):
-                return np.array([start], dtype=float), None
-
-            else:
-                axis: NDArray[np.floating] = np.array([start, stop], dtype=float)
-                return axis, stop - start
-
-        n_steps: int = int(round((stop - start) / dx)) + 1
-        axis: NDArray[np.floating] = start + dx * np.arange(n_steps)
-        if not np.isclose(axis[-1], stop, rtol=1e-8, atol=1e-12):
-            axis: NDArray[np.floating] = np.append(axis, stop)
-        return axis, dx
-
-    def _group_and_average_columns(
+    # TODO - Potentially add more mode and fill_val options, such as interpolation. 
+    def combine(
             self, 
-            cols: list[tuple[float, tuple[float, ...]]]
-        ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
-        """
-        TODO: Update so that this works properly!
-
-        Parameters
-        ----------
-        cols : list[tuple[float, tuple[float, ...]]]
-            _description_
-
-        Returns
-        -------
-        tuple[NDArray[np.floating], NDArray[np.floating]]
-            _description_
-
-        cols: list of tuples (x_value(float), column_tuple_of_floats)
-        returns (x_new_array, vals_matrix) with duplicated x's averaged.
-        """
-        if not cols:
-            return np.array([], dtype=float), np.zeros((0,0), dtype=float)
-
-        # Sort by x then by column values (deterministic)
-        cols_sorted: list[tuple[float, tuple[float, ...]]] = sorted(cols, key=lambda t: (t[0], t[1]))
-
-        # Group consecutive entries with same x
-        xs: list[float] = [c[0] for c in cols_sorted]
-        cols_vals: list[NDArray[np.floating]] = [np.array(c[1], dtype=float) for c in cols_sorted]
-
-        groups: list[tuple[list[float], list[NDArray[np.floating]]]] = []
-        current_group_idx: int = 0
-        current_group: list[NDArray[np.floating]] = [cols_vals[0]]
-        current_xs: list[float] = [xs[0]]
-
-        for xi, ci in zip(xs[1:], cols_vals[1:]):
-            if np.isclose(xi, current_xs[-1], atol=1e-8, rtol=1e-6):
-                current_group.append(ci)
-                current_xs.append(xi)
-
-            else:
-                groups.append((current_xs, current_group))
-                current_group_idx += 1
-                current_group = [ci]
-                current_xs = [xi]
-
-        groups.append((current_xs, current_group))
-
-        # For each group compute mean x and mean column (averaging duplicates)
-        averaged_cols: list[NDArray[np.floating]] = []
-        averaged_xs: list[float] = []
-        for x_group, col_group in groups:
-            # Stack columns (shape (n_members, nrows)) -> average along axis=0 yields (nrows,)
-            stacked: NDArray[np.floating] = np.vstack(col_group)  # Shape (n_members, nrows)
-            mean_col: NDArray[np.floating] = np.mean(stacked, axis=0)
-            mean_x: float = float(np.mean(x_group))
-            averaged_xs.append(mean_x)
-            averaged_cols.append(mean_col)
-
-        vals: NDArray[np.floating] = np.column_stack(averaged_cols) if averaged_cols else np.zeros((stacked.shape[1], 0))
-        return np.array(averaged_xs, dtype=float), vals
-
-    def _group_and_average_rows(
-            self, 
-            rows: list[tuple[float, tuple[float, ...]]]
-        ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
-        """
-        TODO: Update so that this works properly!
-        rows: list of tuples (y_value(float), row_tuple_of_floats)
-        returns (y_new_array, vals_matrix) with duplicated y's averaged.
-        """
-        if not rows:
-            return np.array([], dtype=float), np.zeros((0,0), dtype=float)
-
-        rows_sorted: list[tuple[float, tuple[float, ...]]] = sorted(rows, key=lambda t: (t[0], t[1]))
-
-        ys: list[float] = [r[0] for r in rows_sorted]
-        rows_vals: list[NDArray[np.floating]] = [np.array(r[1], dtype=float) for r in rows_sorted]
-
-        groups: list[tuple[list[float], list[NDArray[np.floating]]]] = []
-        current_group: list[NDArray[np.floating]] = [rows_vals[0]]
-        current_ys: list[float] = [ys[0]]
-        for yi, ri in zip(ys[1:], rows_vals[1:]):
-            if np.isclose(yi, current_ys[-1], atol=1e-8, rtol=1e-6):
-                current_group.append(ri)
-                current_ys.append(yi)
-
-            else:
-                groups.append((current_ys, current_group))
-                current_group = [ri]
-                current_ys = [yi]
-
-        groups.append((current_ys, current_group))
-
-        averaged_rows: list[NDArray[np.floating]] = []
-        averaged_ys: list[float] = []
-        for y_group, row_group in groups:
-            stacked: NDArray[np.floating] = np.vstack(row_group)  # Shape (n_members, ncols)
-            mean_row: NDArray[np.floating] = np.mean(stacked, axis=0)
-            mean_y: float = float(np.mean(y_group))
-            averaged_ys.append(mean_y)
-            averaged_rows.append(mean_row)
-
-        vals: NDArray[np.floating] = np.vstack(averaged_rows) if averaged_rows else np.zeros((0, stacked.shape[1]))
-        return np.array(averaged_ys, dtype=float), vals
-
-    #TODO - Update combine_with() mode='concat' to be aware of x and y coordinates.
-    #TODO - Update combine_with() mode='average' overlap of any values.
-    def combine_with(
-            self, 
-            other: TransientAbsorption, 
+            arr2: TransientAbsorption,
+            *,
             mode: str="average",
-            fill_value: float=0.0, 
+            fill_val: float | None=None,
         ) -> TransientAbsorption:
         """
-        Combines two TransientAbsorption arrays into one continuous instance.
+        Combines two TransientAbsorption arrays into one instance.
+        
+        Returns the result of combining two TransientAbsorption arrays. 
+        This first tries to combine along the second axis (akin to np.hstack 
+        behavior) which switches to combining along the first axis (like 
+        np.vstack) if that fails. The function checks if the y (time) values of 
+        both instances match and, if they do, will create a new x (wavelength) 
+        axis to hold all of the data and similar for combining when the x values 
+        match. It should not matter which order the arrays are combined in 
+        (i.e. arr1.combine(arr2) should be the same as arr2.combine(arr1)).
+        
+        The user can also specify whether any breaks between datasets should be 
+        filled with fill_val or to have the arrays combined as-is with the 
+        default (fill_val=None). If the user specifies a fill_val, then the gap 
+        between two datasets is interpolated along the x or y axis by using the 
+        average of the stepsize (i.e. if the first dataset has dx=1 and the 
+        second has dx=2 then the gap will have a stepsize of dx=1.5). The array 
+        values are then filled with fill_val. fill_val only applies if there
+        is a gap larger than the stepsize between two datasets. Two datasets
+        are also allowed to overlap, i.e. one with x values [400, 405, 410] and
+        another with x values [410, 415, 420] are allowed to be combined but 
+        they must have the same stepsize. Currently, the mode option only 
+        accepts the "average" or "mean" options (which are the same). In the 
+        future more modes may be added so as to allow more complex behavior.
+        More options may also be added for fill_val but currently any number
+        should work.
+        
+        The current implementation is also likely to break if the user tries to
+        combine more than two datasets unless the step size of the first two
+        datasets is the same as the third and that there is no gap between the
+        first two datasets. In other words, trying to combine datasets with
+        x values of [400, 405, 410, 415, 420], [430, 435, 440], and [445, 450]
+        will likely fail. It may be possible to get around this by combining 
+        the last two datasets first as they have no gap between them and all 
+        three datasets have the same stepsize.
+        
 
         Parameters
         ----------
-        other : TransientAbsorption
-            _description_
+        arr2 : TransientAbsorption
+            The array to combine with.
         mode : str, optional
-            _description_, by default "average"
-        fill_value : float, optional
-            _description_, by default 0.0
+            How overlapping values are handled, by default "average".
+            Currently accepts "average" and "mean" (which are the same).
+        fill_val : float | None, optional
+            How gaps in datasets are dealt with, by default None.
 
         Returns
         -------
         TransientAbsorption
-            _description_
+            The combined dataset.
 
         Raises
         ------
         TypeError
-            _description_
+            Raised if arr2 is not a TransientAbsorption instance.
         ValueError
-            _description_
+            Raised if an unknown value is passed to mode.
         ValueError
-            _description_
+            Raised if x and y differ in both arrays.
+        ValueError
+            Raised if axis spacing differs for two arrays when they overlap.
+        ValueError
+            A generic error occurred while trying to handle overlapping arrays.
         """
-        if not isinstance(other, TransientAbsorption):
-            raise TypeError("combine_with expects another TransientAbsorption")
 
-        if mode not in ("average", "concat"):
-            raise ValueError("mode must be 'average' or 'concat'")
+        ARRAY_TOLERANCE: int = 2
 
-        if mode == "concat":
-            # Concat along x if y match exactly — build columns and average duplicates by x
-            if np.array_equal(self.y, other.y):
-                # Build list of tuples [((wavelength), (value))]
-                cols: list[tuple[float, tuple[float, ...]]] = []
-                for x_val, col in zip(self.x, np.asarray(self).T):
-                    cols.append((float(x_val), tuple(map(float, col))))
-                for x_val, col in zip(other.x, np.asarray(other).T):
-                    cols.append((float(x_val), tuple(map(float, col))))
-                x_new: NDArray[np.floating]
-                vals: NDArray[np.floating]
-                x_new, vals = self._group_and_average_columns(cols)
-                return TransientAbsorption(vals, x=x_new, y=copy.copy(self.y))
+        if not isinstance(arr2, TransientAbsorption):
+            raise TypeError("combine expects another TransientAbsorption instance")
 
-            # Concat along y if x match exactly — build rows and average duplicates by y
-            elif np.array_equal(self.x, other.x):
-                rows: list[tuple[float, tuple[float, ...]]] = []
-                for y_val, row in zip(self.y, np.asarray(self)):
-                    rows.append((float(y_val), tuple(map(float, row))))
+        mode = mode.casefold()
+        if mode not in self._COMBINE_MODES:
+            raise ValueError(f"mode must be one of {self._COMBINE_MODES}")
 
-                for y_val, row in zip(other.y, np.asarray(other)):
-                    rows.append((float(y_val), tuple(map(float, row))))
+        arr1: TransientAbsorption = self
+        intersection: NDArray[np.floating]
+        idx1: NDArray[np.integer]
+        idx2: NDArray[np.integer]
+        axis: int
+        ax1: NDArray[np.floating]
+        ax2: NDArray[np.floating]
 
-                y_new: NDArray[np.floating]
-                vals: NDArray[np.floating]
-                y_new, vals = self._group_and_average_rows(rows)
-                return TransientAbsorption(vals, x=copy.copy(self.x), y=y_new)
+        # TODO - May refactor this part to be easier to follow and so there is not so much repetition.
+        # Check which axis we are combining along and adjust order of arrays if necessary.
+        if np.array_equal(np.round(arr1.y, ARRAY_TOLERANCE), np.round(arr2.y, ARRAY_TOLERANCE)):
+            # Two non-overlapping, positive arrays always have positive difference 
+            # for min(arr2) - max(arr1) if in the order arr1 arr2. If the arrays 
+            # are in the order arr2 arr1, then min(arr2) - max(arr1) is negative 
+            # and the labeling should be swapped. Two overlapping, positive arrays 
+            # always have negative difference for min(arr2) - max(arr1) regardless 
+            # of order if it can be assumed that neither array is completely 
+            # "covered" by the other. The other option of max(arr2) - min(arr1)
+            # is also always positive for the two arrays. However, since neither of
+            # the arrays are completely covered, then for the order arr1 arr2 the
+            # inequalities max(arr2) > max(arr1) and min(arr2) > min(arr1). The
+            # difference between max(arr2) - max(arr1) should then always be positive
+            # for the order arr1 arr2.
 
-            # Else refuse
-            else:
-                raise ValueError(
-                    "concat mode requires exact match on the orthogonal axis: "
-                    "either self.y == other.y (concat columns) or self.x == other.x (concat rows)."
+            # Case of two non-overlapping arrays. 
+            # Operation of min(arr2) - max(arr1) gives different sign depending on labeling.
+            #        max  min
+            #    arr1  ↓  ↓  arr2          min(arr2) - max(arr1) = +
+            # ██████████  ██████████
+            # ↑  arr2        arr1  ↑       min(arr2) - max(arr1) = -
+            # min                max
+            #
+            # Case of two overlapping arrays. 
+            # The operation min(arr2) - max(arr1) is always negative.
+            #     min  max
+            #  arr1 |  ↓ arr2              min(arr2) - max(arr1) = -
+            # ██████↓███        
+            #       ██████████
+            # ↑ arr2    arr1 ↑             min(arr2) - max(arr1) = -
+            # min          max
+            # Find if arrays overlap at all
+
+            intersection, idx1, idx2 = np.intersect1d(
+                np.round(arr1.x, ARRAY_TOLERANCE), 
+                np.round(arr2.x, ARRAY_TOLERANCE), 
+                return_indices=True
+            )
+            diff: float = (
+                (np.max(arr2.x) - np.max(arr1.x)) 
+                if intersection.any() else (np.min(arr2.x) - np.max(arr1.x))
+            )
+            if diff < 0:
+                arr1, arr2 = arr2, arr1
+                idx1, idx2 = idx2, idx1
+
+            axis, ax1, ax2 = 1, arr1.x, arr2.x
+
+        elif np.array_equal(np.round(arr1.x, ARRAY_TOLERANCE), np.round(arr2.x, ARRAY_TOLERANCE)):
+            intersection, idx1, idx2 = np.intersect1d(
+                np.round(arr1.y, ARRAY_TOLERANCE), 
+                np.round(arr2.y, ARRAY_TOLERANCE), 
+                return_indices=True
+            )
+            diff: float = (
+                (np.max(arr2.y) - np.max(arr1.y)) 
+                if intersection.any() else (np.min(arr2.y) - np.max(arr1.y))
+            )
+            if diff < 0:
+                arr1, arr2 = arr2, arr1
+                idx1, idx2 = idx2, idx1
+
+            axis, ax1, ax2 = 1, arr1.y, arr2.y
+
+        else:
+            raise ValueError(
+                "Either x or y axes must match in both arrays; "
+                "arrays with different numbers of rows and columns are not supported."
                 )
 
-        # Average mode
-        x_new: NDArray[np.floating]
-        y_new: NDArray[np.floating]
-        dx: float | None
-        dy: float | None
-        x_new, dx = self._continuous_axis(self.x, other.x)
-        y_new, dy = self._continuous_axis(self.y, other.y)
+        # Overlapping arrays
+        if intersection.any():
+            dax1: float = float(np.mean(np.diff(ax1)))
+            dax2: float = float(np.mean(np.diff(ax2)))
+            compatible: bool = np.isclose(dax1, dax2, rtol=1e-6, atol=1e-9)
+            if not compatible:
+                raise ValueError("Overlapping arrays with different axis spacings are not supported.")
+            
+            n_steps: int = int((np.max(ax2) - np.min(ax1)) / (0.5 * (dax1 + dax2)))
+            new_ax: NDArray[np.floating] = np.linspace(np.min(ax1), np.max(ax2), n_steps + 1)
 
-        new_vals_sum: NDArray[np.floating] = np.full((len(y_new), len(x_new)), 0.0, dtype=float)
-        new_counts: NDArray[np.floating] = np.zeros_like(new_vals_sum, dtype=float)
+            new_data: NDArray[np.floating] = (
+                np.zeros((len(arr1.y), len(new_ax))) 
+                if axis == 1 else np.zeros((len(new_ax), len(arr1.x)))
+            )
+            # Just place old data into the new array since we will overwrite the overlap later.
+            if axis == 1:
+                new_data[:, :len(ax1)] = np.asarray(arr1)
+                new_data[:, len(ax1)-len(idx1):] = np.asarray(arr2)
 
-        def find_index(
-                axis: NDArray[np.floating], 
-                val: float
-            ) -> int:
+            elif axis == 0:
+                new_data[:len(ax1), :] = np.asarray(arr1) 
+                new_data[len(ax1)-len(idx1):, :] = np.asarray(arr2)
 
-            # Find indices where axis and val are equal
-            idx: NDArray[np.integer] = np.flatnonzero(np.isclose(axis, val, atol=1e-8, rtol=1e-6))
-            # If no indices were found, find the closest matching values
-            if idx.size == 0:
-                idx: NDArray[np.integer] = np.array([int(np.argmin(np.abs(axis - val)))])
+            for i1, i2 in zip(idx1, idx2):
+                if ax1[i1] != ax2[i2]:
+                    raise ValueError("An error occurred while handling overlapping values.")
+                idx_new: int = np.argmin(np.abs(new_ax - ax1[i1]))
 
-            return int(idx[0])
+                if axis == 1:
+                    col1: NDArray[np.floating] = np.atleast_2d(np.array(arr1[:, i1])).T
+                    col2: NDArray[np.floating] = np.atleast_2d(np.array(arr2[:, i2])).T
+                    stack: NDArray[np.floating] = np.hstack((col1, col2))
+                    new_data[:, idx_new] = np.average(stack, axis=1)
 
-        def place_into(
-                acc_sum: NDArray[np.floating], 
-                acc_count: NDArray[np.floating], 
-                src: TransientAbsorption, 
-                src_x: NDArray[np.floating], 
-                src_y: NDArray[np.floating]
-            ) -> None:
+                elif axis == 0:
+                    row1: NDArray[np.floating] = np.atleast_2d(np.array(arr1[i1, :]))
+                    row2: NDArray[np.floating] = np.atleast_2d(np.array(arr2[i2, :]))
+                    stack: NDArray[np.floating] = np.vstack((row1, row2))
+                    new_data[idx_new, :] = np.average(stack, axis=0)
 
-            # Find where to place data into the new array
-            x0: int = find_index(x_new, src_x[0])
-            y0: int = find_index(y_new, src_y[0])
-            r0: int
-            c0: int
-            r1: int
-            c1: int
-            r0, r1 = y0, y0 + src.shape[0]
-            c0, c1 = x0, x0 + src.shape[1]
-            acc_sum[r0:r1, c0:c1] += np.asarray(src, dtype=float)
-            acc_count[r0:r1, c0:c1] += 1.0
+            return (
+                TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y)) 
+                if axis == 1 else TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax)
+            )
 
-        place_into(new_vals_sum, new_counts, self, self.x, self.y)
-        place_into(new_vals_sum, new_counts, other, other.x, other.y)
+        # Non-overlapping arrays
+        else:
+            comb: NDArray[np.floating] = np.concatenate((ax1, ax2))
+            diff: NDArray[np.floating] = np.diff(comb)
+            unique: NDArray[np.floating]
+            counts: NDArray[np.integer]
+            unique, counts = np.unique(diff, return_counts=True)
+            # Concatenate both axes regardless of spacing for fill_value = None and 
+            # when gap size is equal to either of the array spacings.
+            if fill_val == None or (len(unique) == 2 and not np.any(counts == 1)):
+                new_ax: NDArray[np.floating] = comb
+                new_data: NDArray[np.floating] = np.concatenate((arr1, arr2), axis=axis)
+                return (
+                    TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y)) 
+                    if axis == 1 else TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax)
+                )
 
-        with np.errstate(invalid='ignore', divide='ignore'):
-            averaged = np.where(new_counts > 0, new_vals_sum / new_counts, fill_value)
+            # Fill values between arrays with fill_value using the average stepsize of the two axes.
+            else:
+                dax: float = 0.5 * (np.mean(np.diff(ax1)) + np.mean(np.diff(ax2)))
+                filled: NDArray[np.floating] = np.arange(np.max(ax1) + dax, np.min(ax2), dax)
+                new_ax: NDArray[np.floating] = np.concatenate((ax1, filled, ax2))
+                if axis == 1:
+                    new_data: NDArray[np.floating] = np.zeros((len(arr1.y), len(new_ax))) + fill_val
+                    new_data[:, :len(ax1)] = arr1
+                    new_data[:, len(ax1)+len(filled):] = arr2
+                    return TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y))
 
-        return TransientAbsorption(averaged, x=x_new, y=y_new)
+                elif axis == 0:
+                    new_data: NDArray[np.floating] = np.zeros((len(new_ax), len(arr1.x))) + fill_val
+                    new_data[:len(ax1), :] = arr1
+                    new_data[len(ax1)+len(filled):, :] = arr2
+                    return TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax)
 
     def add(
             self, 
             other: TransientAbsorption, 
+            *,
             mode: str="average", 
-            fill_value: float=0.0
+            fill_val: float | None=None
         ) -> TransientAbsorption:
+        """
+        Alias for combine().
 
-        if mode in ("average", "concat"):
-            return self.combine_with(other, fill_value=fill_value, mode=mode)
+        Parameters
+        ----------
+        other : TransientAbsorption
+            The array to combine with.
+        mode : str, optional
+            How overlapping values are handled, by default "average"
+        fill_val : float | None, optional
+            How gaps between datasets are handled, by default None
 
-        raise ValueError("mode must be 'average' or 'concat'")
+        Returns
+        -------
+        TransientAbsorption
+            The combined dataset.
+
+        Raises
+        ------
+        ValueError
+            Raised if an unknown value is passed to mode.
+        """
+
+        if mode in self._COMBINE_MODES:
+            return self.combine(other, fill_val=fill_val, mode=mode)
+
+        raise ValueError(f"mode must be one of {self._COMBINE_MODES}")
 
     def __add__(
             self, 
-            other: TransientAbsorption | _AddWithMode
+            other: TransientAbsorption
         ) -> TransientAbsorption:
-
-        if isinstance(other, _AddWithMode):
-            target: TransientAbsorption = other.obj
-            mode = other.mode
-            if not isinstance(target, TransientAbsorption):
-                return NotImplemented
-            return self.combine_with(target, fill_value=0.0, mode=mode)
 
         # Non-TransientAbsorption (scalar or ndarray)
         if not isinstance(other, TransientAbsorption):
@@ -636,20 +611,14 @@ class TransientAbsorption(np.ndarray):
             except Exception:
                 return NotImplemented
 
-        # Both TransientAbsorption -> default CONCAT (order-independent due to grouping+averaging)
-        return self.combine_with(other, fill_value=0.0, mode="concat")
+        # Both TransientAbsorption -> default average
+        return self.combine(other, fill_val=None, mode="average")
 
     def __radd__(
             self, 
-            other: TransientAbsorption | _AddWithMode
+            other: TransientAbsorption
         ) -> TransientAbsorption:
 
-        if isinstance(other, _AddWithMode):
-            target: TransientAbsorption = other.obj
-            mode: str = other.mode
-            if not isinstance(target, TransientAbsorption):
-                return NotImplemented
-            return target.combine_with(self, fill_value=0.0, mode=mode)
         return self.__add__(other)
 
     def __getitem__(
