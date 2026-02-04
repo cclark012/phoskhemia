@@ -5,6 +5,16 @@ import numpy as np
 class KineticModel(ABC):
     """
     Base class for global kinetic models.
+    
+    Subclasses must implement the following methods:
+    n_params() -> int:
+        Returns the number of nonlinear/global variables.
+    solve(times: NDArray[np.floating], beta: NDArray[np.floating]) -> NDArray[np.floating]:
+        Solves the model and returns a column vector/matrix.
+    param_names() -> str | list[str] | tuple[str]:
+        Chosen names for the nonlinear variables.
+    species_names() -> str | list[str] | tuple[str]:
+        Chosen names for the chemical/kinetic species.
     """
 
     @abstractmethod
@@ -34,11 +44,11 @@ class KineticModel(ABC):
         pass
 
     @abstractmethod
-    def param_names(self: KineticModel) -> str | list[str] | tuple[str]:
+    def param_names(self: KineticModel) -> str | list[str] | tuple[str, ...]:
         """Names of kinetic parameters."""
         pass
 
     @abstractmethod
-    def species_names(self: KineticModel) -> str | list[str] | tuple[str]:
+    def species_names(self: KineticModel) -> str | list[str] | tuple[str, ...]:
         """Names of kinetic species / basis functions."""
         pass
