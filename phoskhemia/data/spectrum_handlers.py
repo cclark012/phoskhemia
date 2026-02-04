@@ -57,6 +57,7 @@ class TransientAbsorption(np.ndarray):
         np.choose,
         np.clip,
         np.compress,
+        np.concatenate,
         np.conj,
         np.conjugate,
         np.copy,
@@ -178,16 +179,13 @@ class TransientAbsorption(np.ndarray):
 
         object.__setattr__(obj, "x", x)
         object.__setattr__(obj, "y", y)
-        obj._validate()
-        return obj
 
-    def _validate(self) -> None:
-        """Check that data is represented correctly."""
-
-        if self.ndim != 2:
+        # One last validation
+        if obj.ndim != 2:
             raise ValueError("TransientAbsorption must be 2D")
-        if self.shape != (len(self.y), len(self.x)):
+        if obj.shape != (len(obj.y), len(obj.x)):
             raise ValueError("Data/axis mismatch")
+        return obj
 
     def __array_finalize__(
             self, 
@@ -806,7 +804,7 @@ class TransientAbsorption(np.ndarray):
             # when gap size is equal to either of the array spacings.
             if fill_val == None or (len(unique) == 2 and not np.any(counts == 1)):
                 new_ax: NDArray[np.floating] = comb
-                new_data: NDArray[np.floating] = np.concatenate((arr1, arr2), axis=axis)
+                new_data: NDArray[np.floating] = np.concatenate((np.array(arr1), np.array(arr2)), axis=axis)
                 return (
                     TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y)) 
                     if axis == 1 else TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax)
@@ -819,14 +817,14 @@ class TransientAbsorption(np.ndarray):
                 new_ax: NDArray[np.floating] = np.concatenate((ax1, filled, ax2))
                 if axis == 1:
                     new_data: NDArray[np.floating] = np.zeros((len(arr1.y), len(new_ax))) + fill_val
-                    new_data[:, :len(ax1)] = arr1
-                    new_data[:, len(ax1)+len(filled):] = arr2
+                    new_data[:, :len(ax1)] = np.array(arr1)
+                    new_data[:, len(ax1)+len(filled):] = np.array(arr2)
                     return TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y))
 
                 elif axis == 0:
                     new_data: NDArray[np.floating] = np.zeros((len(new_ax), len(arr1.x))) + fill_val
-                    new_data[:len(ax1), :] = arr1
-                    new_data[len(ax1)+len(filled):, :] = arr2
+                    new_data[:len(ax1), :] = np.array(arr1)
+                    new_data[len(ax1)+len(filled):, :] = np.array(arr2)
                     return TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax)
 
     def fit_global_kinetics(
