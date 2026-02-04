@@ -12,8 +12,7 @@ class TransientAbsorption(np.ndarray):
     Shape : (n_times, n_wavelengths)
 
     TODO:
-    1) Add functionality for fill_value in add() and combine_with()
-    2) Add downsampling for large datasets
+    1) Add downsampling for large datasets
 
     Attributes
     ----------
