@@ -86,3 +86,12 @@ def reconstruct_species(
         y=times,
     )
 
+
+def reconstruct_residuals(result: GlobalFitResult, data: TransientAbsorption):
+    pass
+
+def reconstruct_weighted_residuals():
+    pass
+
+def reconstruct_species_sum(result: GlobalFitResult, species: list[int | str]):
+    pass
