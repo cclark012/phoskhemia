@@ -1,23 +1,27 @@
+from typing import Any
+from dataclasses import dataclass
+
 import numpy as np
 from numpy.typing import NDArray
 from scipy import odr
 
 from phoskhemia.kinetics.base import KineticModel
-from phoskhemia.fitting.projections import project_amplitudes
+from phoskhemia.fitting.projections import project_amplitudes, propagate_kinetic_covariance
 from phoskhemia.fitting.validation import compute_diagnostics
-from phoskhemia.fitting.projections import propagate_kinetic_covariance
 from phoskhemia.data.spectrum_handlers import TransientAbsorption
+from phoskhemia.fitting.results import GlobalFitResult
+
 
 def fit_global_kinetics(
-        self: TransientAbsorption,
-        kinetic_model: KineticModel,
+        arr,
+        kinetic_model,
         beta0: NDArray[np.floating],
         *,
-        noise: NDArray[np.floating] | float | None = None,
+        noise: NDArray[np.floating] | None = None,
         lam: float = 1e-12,
         propagate_kinetic_uncertainty: bool = False,
         debug: bool = False,
-    ) -> dict:
+    ) -> GlobalFitResult:
     """
     Perform a global kinetic fit using variable projection.
 
@@ -38,14 +42,14 @@ def fit_global_kinetics(
 
     Returns
     -------
-    result : dict
+    result : GlobalFitResult
         Structured fit result
     """
 
     # Input preparation
-    data: NDArray[np.floating] = np.asarray(self, dtype=float)
-    times: NDArray[np.floating] = np.asarray(self.y, dtype=float)
-    wl: NDArray[np.floating] = np.asarray(self.x, dtype=float)
+    data: NDArray[np.floating] = np.asarray(arr, dtype=float)
+    times: NDArray[np.floating] = np.asarray(arr.y, dtype=float)
+    wl: NDArray[np.floating] = np.asarray(arr.x, dtype=float)
     beta0: NDArray[np.floating] = np.asarray(beta0, dtype=float)
 
     n_times: int
@@ -145,14 +149,14 @@ def fit_global_kinetics(
 
     # Package result
     kinetics: dict[str, float] = {
-        name: np.exp(val)
+        name: float(np.exp(val))
         for name, val in zip(
             kinetic_model.param_names(),
             beta,
         )
     }
-    kinetics_err: dict[str, float] = {
-        name + "_err": np.exp(val) * err
+    kinetics_errors: dict[str, float] = {
+        name + "_err": float(np.exp(val) * err)
         for name, val, err in zip(
             kinetic_model.param_names(),
             beta,
@@ -160,28 +164,24 @@ def fit_global_kinetics(
         )
     }
 
-    result: dict = {
-        "odr": odr_out,
-        "kinetics": {**kinetics, **kinetics_err},
-        "amplitudes": {
-            "values": amplitudes,
-            "errors": amp_errors,
-            "species": kinetic_model.species_names(),
-            "x": wl,
-        },
-        "diagnostics": diagnostics,
-        "_cache": {
+    result: GlobalFitResult = GlobalFitResult(
+        kinetics=kinetics,
+        kinetics_errors=kinetics_errors,
+        amplitudes=amplitudes,
+        amplitude_errors=amp_errors,
+        species=kinetic_model.species_names(),
+        wavelengths=wl,
+        diagnostics=diagnostics,
+        backend={"odr": odr_out},
+        _cache={
             "kinetic_model": kinetic_model,
             "beta": beta,
             "times": times,
             "traces": traces,
         },
-    }
+    )
 
     return result
 
-def reconstruct_fit():
-    pass
 
-def reconstruct_species():
-    pass
+
