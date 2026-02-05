@@ -1,4 +1,5 @@
-from .global_fit import fit_global_kinetics, reconstruct_fit
+from .global_fit import fit_global_kinetics
+from .reconstructions import reconstruct_fit
 from .validation import (
     compute_diagnostics,
     compute_residual_maps,
