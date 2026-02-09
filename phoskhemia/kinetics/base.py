@@ -1,3 +1,4 @@
+from typing import Literal
 from abc import ABC, abstractmethod
 from numpy.typing import NDArray
 import numpy as np
@@ -11,10 +12,19 @@ class KineticModel(ABC):
         Returns the number of nonlinear/global variables.
     solve(times: NDArray[np.floating], beta: NDArray[np.floating]) -> NDArray[np.floating]:
         Solves the model and returns a column vector/matrix.
-    param_names() -> str | list[str] | tuple[str]:
+    
+    Subclasses can implement the following methods for printing and fit control:
+    param_names() -> str | list[str]:
         Chosen names for the nonlinear variables.
-    species_names() -> str | list[str] | tuple[str]:
+    param_units() -> str | list[str | None]:
+        Chosen units for the nonlinar variables.
+    param_descriptions() -> str | list[str | None]:
+        Chosen descriptions for the nonlinear variables.
+    species_names() -> str | list[str]:
         Chosen names for the chemical/kinetic species.
+    parameterization() -> Literal["log", "linear"]:
+        Whether nonlinear variables will be fit in log or linear space. 
+        Must return either "log" or "linear".
     """
 
     @abstractmethod
@@ -24,7 +34,7 @@ class KineticModel(ABC):
 
     @abstractmethod
     def solve(
-            self: KineticModel, 
+            self, 
             times: NDArray[np.floating], 
             beta: NDArray[np.floating]
         ) -> NDArray[np.floating]:
@@ -43,12 +53,20 @@ class KineticModel(ABC):
         """
         pass
 
-    @abstractmethod
-    def param_names(self: KineticModel) -> str | list[str] | tuple[str, ...]:
+    def param_names(self) -> str | list[str]:
         """Names of kinetic parameters."""
-        pass
+        return [f"p{i}" for i in range(self.n_params())]
 
-    @abstractmethod
-    def species_names(self: KineticModel) -> str | list[str] | tuple[str, ...]:
+    def param_units(self) -> str | list[str | None]:
+        return [None] * self.n_params()
+    
+    def param_descriptions(self) -> str | list[str | None]:
+        return [None] * self.n_params()
+
+    def species_names(self) -> str | list[str]:
         """Names of kinetic species / basis functions."""
-        pass
+        return [f"species{i}" for i in range(self.solve(np.array([0.0]), np.zeros(self.n_params())).shape[1])]
+    
+    def parameterization(self) -> Literal["log", "linear"]:
+        return "log"
+
