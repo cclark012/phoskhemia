@@ -57,3 +57,35 @@ def _safe_float(v) -> float | None:
         return float(v)
     except Exception:
         return None
+
+def _top_correlations(
+        cov: NDArray[np.floating],
+        names: list[str],
+        *,
+        top_n: int = 5,
+    ) -> list[tuple[str, str, float]]:
+    """Return top absolute off-diagonal correlations from a covariance matrix."""
+    cov = np.asarray(cov, dtype=float)
+    # Return empty list if the shape of cov is unexpected or fewer than 2 rows.
+    if cov.ndim != 2 or cov.shape[0] != cov.shape[1]:
+        return []
+    n = cov.shape[0]
+    if n < 2:
+        return []
+
+    # Try calculating Pearson's correlation coefficient for each covariance.
+    sd = np.sqrt(np.diag(cov))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        corr = cov / (sd[:, None] * sd[None, :])
+
+    # Get pairs in upper triangle and their correlation coefficient.
+    pairs: list[tuple[str, str, float]] = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            r = corr[i, j]
+            if np.isfinite(r):
+                pairs.append((names[i], names[j], float(r)))
+
+    # Sort the pairs by the magnitude of their correlation.
+    pairs.sort(key=lambda t: abs(t[2]), reverse=True)
+    return pairs[: max(0, int(top_n))]
