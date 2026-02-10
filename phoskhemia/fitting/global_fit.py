@@ -12,6 +12,82 @@ from phoskhemia.fitting.validation import compute_diagnostics
 from phoskhemia.data.spectrum_handlers import TransientAbsorption
 from phoskhemia.fitting.results import GlobalFitResult
 
+def cov_delta_lognormal(
+        beta: NDArray[np.floating],
+        cov_beta: NDArray[np.floating],
+    ) -> NDArray[np.floating]:
+    """
+    Linear approximation for covariance in natural space for p = exp(β) with β ~ 𝒩(μ, Σ).
+
+    Parameters
+    ----------
+    beta : NDArray[np.floating]
+        Vector of fit parameters.
+    cov_beta : NDArray[np.floating]
+        Covariance of beta.
+
+    Returns
+    -------
+    NDArray[np.floating]
+        Covariance of p in natural space.
+    """
+
+    b: NDArray[np.floating] = np.asarray(beta, dtype=float).reshape(-1)
+    S: NDArray[np.floating] = np.asarray(cov_beta, dtype=float)
+
+    p: NDArray[np.floating] = np.exp(b)
+    J: NDArray[np.floating] = np.diag(p)
+    return J @ S @ J
+
+def cov_lognormal(
+        beta: NDArray[np.floating],
+        cov_beta: NDArray[np.floating],
+    ) -> NDArray[np.floating]:
+    """
+    Exact covariance in natural space for p = exp(β) with β ~ 𝒩(μ, Σ).
+    
+    Because residuals are usually assumed to follow a normal distribution,
+    parameters fit in log-space follow a log-normal distribution in natural-space.
+    To obtain the covariance values in natural space the log-space covariances 
+    are transformed according to: 
+    Σ(pᵢ, pⱼ) = exp(μᵢ + μⱼ + ½(Σᵢᵢ + Σⱼⱼ)) ⋅ (exp(Σᵢⱼ) - 1)
+    Where Σ(pᵢ, pⱼ) is the covariance of parameters pᵢ with respect to pⱼ.
+    μᵢ, μⱼ are the mean values of parameters βᵢ and βⱼ (the log-space values).
+    Σᵢᵢ, Σⱼⱼ are the self-correlation values (variance) of βᵢ and βⱼ.
+    Σᵢⱼ is the covariance of parameters βᵢ and βⱼ.
+
+    Parameters
+    ----------
+    beta : (k,) ndarray
+        Vector of fit parameters.
+    cov_beta : (k,k) ndarray
+        Covariance of beta.
+
+    Returns
+    -------
+    cov_p : (k,k) ndarray
+        Exact covariance of p in natural space (multivariate log-normal).
+
+    Raises
+    ------
+    ValueError
+        Raised if cov_beta is not of shape (k, k).
+    """
+
+    mu: NDArray[np.floating] = np.asarray(beta, dtype=float).reshape(-1)
+    S: NDArray[np.floating] = np.asarray(cov_beta, dtype=float)
+    if S.shape[0] != S.shape[1] or S.shape[0] != mu.shape[0]:
+        raise ValueError("Shape mismatch: beta must be (k,), cov_beta must be (k,k).")
+
+    diag: NDArray[np.floating] = np.diag(S)
+    # A_ij = exp(mu_i + mu_j + 0.5*(S_ii + S_jj))
+    A: NDArray[np.floating] = (
+        np.exp(mu[:, None] + mu[None, :] 
+        + 0.5 * (diag[:, None] + diag[None, :]))
+    )
+    cov_p: NDArray[np.floating] = A * (np.exp(S) - 1.0)
+    return cov_p
+
 def _z_from_ci_level(ci_level: float) -> float:
     """
     Convert two-sided CI level to z for a standard normal.
@@ -33,8 +109,8 @@ def transform_params_and_cis(
         cov_beta: np.ndarray | None,
         *,
         parameterization: str,
-        ci_sigma: float | None = 1.0,      # explicit z-score / # sigmas (default: 1)
-        ci_level: float | None = None,     # two-sided level, e.g. 0.95
+        ci_sigma: float | None = None,
+        ci_level: float | None = None,
     ) -> tuple[
         NDArray[np.floating], 
         NDArray[np.floating] | None, 
@@ -68,44 +144,41 @@ def transform_params_and_cis(
 
     beta: NDArray[np.floating] = np.asarray(beta, dtype=float)
 
+    sigma: None = None
     if cov_beta is not None:
-        cov_beta: NDArray[np.floating] | float = np.asarray(cov_beta, dtype=float)
-        sigma: NDArray[np.floating] | float = np.sqrt(np.diag(cov_beta))
-    else:
-        sigma: None = None
+        cov_beta: NDArray[np.floating] = np.asarray(cov_beta, dtype=float)
+        sigma: NDArray[np.floating] = np.sqrt(np.diag(cov_beta))
 
     # Determine z
-    if ci_sigma is None:
-        z: float = _z_from_ci_level(ci_level) if ci_level is not None else None
+    if ci_sigma is not None:
+        z: float | None = float(ci_sigma)
+    elif ci_level is not None:
+        z = _z_from_ci_level(ci_level)
     else:
-        z: float = float(ci_sigma)
+        z = 1.0  # default: 1σ
 
     if parameterization == "log":
-        params: NDArray[np.floating] | float = np.exp(beta)
-
-        if sigma is None or z is None:
+        params: NDArray[np.floating] = np.exp(beta)
+        if sigma is None:
             return params, None, None
-
-        ci_low: NDArray[np.floating] | float = np.exp(beta - z * sigma)
-        ci_high: NDArray[np.floating] | float = np.exp(beta + z * sigma)
+        ci_low: NDArray[np.floating] = np.exp(beta - z * sigma)
+        ci_high: NDArray[np.floating] = np.exp(beta + z * sigma)
         return params, ci_low, ci_high
 
-    elif parameterization == "linear":
+    if parameterization == "linear":
         params: NDArray[np.floating] = beta.copy()
-
-        if sigma is None or z is None:
+        if sigma is None:
             return params, None, None
-
-        ci_low: NDArray[np.floating] | float = params - z * sigma
-        ci_high: NDArray[np.floating] | float = params + z * sigma
+        ci_low: NDArray[np.floating] = params - z * sigma
+        ci_high: NDArray[np.floating] = params + z * sigma
         return params, ci_low, ci_high
 
-    else:
-        warnings.warn(
-            f"Unknown parameterization '{parameterization}'. "
-            "Assuming linear parameters without CIs."
-        )
-        return beta.copy(), None, None
+    warnings.warn(
+        f"Unknown parameterization '{parameterization}'. "
+        "Assuming linear parameters without CIs."
+    )
+    return beta.copy(), None, None
+
 
 def fit_global_kinetics(
         arr: TransientAbsorption,
