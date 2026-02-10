@@ -32,11 +32,12 @@ def cov_delta_lognormal(
         Covariance of p in natural space.
     """
 
-    b: NDArray[np.floating] = np.asarray(beta, dtype=float).reshape(-1)
+    beta: NDArray[np.floating] = np.asarray(beta, dtype=float).reshape(-1)
     S: NDArray[np.floating] = np.asarray(cov_beta, dtype=float)
+    if S.shape[0] != S.shape[1] or S.shape[0] != beta.shape[0]:
+        raise ValueError("Shape mismatch: beta must be (k,), cov_beta must be (k,k).")
 
-    p: NDArray[np.floating] = np.exp(b)
-    J: NDArray[np.floating] = np.diag(p)
+    J: NDArray[np.floating] = np.diag(np.exp(beta))
     return J @ S @ J
 
 def cov_lognormal(
@@ -74,15 +75,15 @@ def cov_lognormal(
         Raised if cov_beta is not of shape (k, k).
     """
 
-    mu: NDArray[np.floating] = np.asarray(beta, dtype=float).reshape(-1)
+    beta: NDArray[np.floating] = np.asarray(beta, dtype=float).reshape(-1)
     S: NDArray[np.floating] = np.asarray(cov_beta, dtype=float)
-    if S.shape[0] != S.shape[1] or S.shape[0] != mu.shape[0]:
+    if S.shape[0] != S.shape[1] or S.shape[0] != beta.shape[0]:
         raise ValueError("Shape mismatch: beta must be (k,), cov_beta must be (k,k).")
 
     diag: NDArray[np.floating] = np.diag(S)
-    # A_ij = exp(mu_i + mu_j + 0.5*(S_ii + S_jj))
+    # A_ij = exp(beta_i + beta_j + 0.5*(S_ii + S_jj))
     A: NDArray[np.floating] = (
-        np.exp(mu[:, None] + mu[None, :] 
+        np.exp(beta[:, None] + beta[None, :] 
         + 0.5 * (diag[:, None] + diag[None, :]))
     )
     cov_p: NDArray[np.floating] = A * (np.exp(S) - 1.0)
