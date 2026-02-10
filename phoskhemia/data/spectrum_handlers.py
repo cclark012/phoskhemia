@@ -5,6 +5,8 @@ from scipy.signal import convolve
 from numpy.typing import NDArray
 from typing import Callable, Any
 
+from phoskhemia.fitting.results import GlobalFitResult
+
 class TransientAbsorption(np.ndarray):
     """
     Represents a 2-D transient absorption dataset.
@@ -831,14 +833,14 @@ class TransientAbsorption(np.ndarray):
         self,
         *args: tuple,
         **kwargs: dict[str, Any],
-    ) -> dict:
+    ) -> GlobalFitResult:
         """
         Fit data to a kinetic model. See phoskhemia.fitting.global_fit.fit_global_kinetics(). 
 
         Returns
         -------
-        dict
-            A dictionary of the fit results.
+        GlobalFitResult
+            A structured object of the fit results.
         """
 
         from phoskhemia.fitting.global_fit import fit_global_kinetics
