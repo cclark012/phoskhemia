@@ -6,7 +6,7 @@ from phoskhemia.kinetics.base import KineticModel
 def project_amplitudes(
         traces: NDArray[np.floating], 
         data: NDArray[np.floating], 
-        noise: float, 
+        noise: float | None, 
         lam: float
     ) -> tuple[
         NDArray[np.floating], 
@@ -96,7 +96,7 @@ def project_amplitudes(
         raise ValueError("traces and data length mismatch")
 
     # Treat non-positive noise as unweighted least squares
-    if noise <= 0:
+    if noise <= 0 or noise is None:
         noise = 1.0
 
     n_times: int
