@@ -27,10 +27,8 @@ def reconstruct_fit(
         Reconstructed fitted signal (n_times, n_wavelengths)
     """
 
-    cache: dict[str, Any] = result._cache
-
-    traces: NDArray[np.floating] = cache["traces"]            # (n_times, n_species)
-    times: NDArray[np.floating] = cache["times"]
+    traces: NDArray[np.floating] = result.traces            # (n_times, n_species)
+    times: NDArray[np.floating] = result.times
     amplitudes: NDArray[np.floating] = result.amplitudes      # (n_wl, n_species)
     wavelengths: NDArray[np.floating] = result.wavelengths
 
@@ -66,8 +64,8 @@ def reconstruct_species(
 
     cache: dict[str, Any] = result._cache
 
-    traces: NDArray[np.floating] = cache["traces"]            # (n_times, n_species)
-    times: NDArray[np.floating] = cache["times"]
+    traces: NDArray[np.floating] = result.traces           # (n_times, n_species)
+    times: NDArray[np.floating] = result.times
     amplitudes: NDArray[np.floating] = result.amplitudes      # (n_wl, n_species)
     wavelengths: NDArray[np.floating] = result.wavelengths
     species_names: str | list[str] | tuple[str, ...] = result.species
