@@ -46,7 +46,7 @@ def _normalize_str_list(
 
 def _block_header(title: str, width: int) -> str:
     # Construct a header that is centered in a given width.
-    return f"{title:-^{width}}"
+    return f"|{title:-^{width-1}}|"
 
 def _kv_line(key: str, val: str, width: int, key_w: int = 22) -> str:
     # | key.................. = value............................... |
@@ -231,7 +231,15 @@ class GlobalFitResult:
         ci_spec_s: str = ", ".join(ci_spec) if ci_spec else "unavailable"
 
         # Diagnostics ordering (stable)
-        preferred_diag: list[str] = ["chi2_red", "chi2", "r2", "rmse", "aic", "aicc", "bic"]
+        preferred_diag: dict[str, str] = {
+            "chi2_red": "χᵥ²", 
+            "chi2": "χ²", 
+            "R2": "R²", 
+            "rmse": "RMSE", 
+            "AIC": "AIC", 
+            "AICc": "AICc", 
+            "BIC": "BIC"
+            }
 
         lines: list[str] = []
 
@@ -302,20 +310,21 @@ class GlobalFitResult:
             # brief: single compact line
             if style == "brief":
                 parts: list[str] = []
-                for k in ("chi2_red", "r2", "rmse"):
-                    if k in diag:
+                for k in ("chi2_red", "R2", "rmse"):
+                    if k in diag.keys():
                         fv: float | None = _safe_float(diag.get(k))
                         if fv is not None:
-                            parts.append(f"{k}={_fmt_float(fv, digits)}")
+                            parts.append(f"{preferred_diag[k]}={_fmt_float(fv, digits)}")
                 if parts:
                     lines.append(_kv_line("Key metrics", ", ".join(parts), width))
             else:
                 printed: set = set()
-                for k in preferred_diag:
+                for k in preferred_diag.keys():
                     if k in diag:
                         fv: float | None = _safe_float(diag.get(k))
+                        diag_str: str = preferred_diag[k]
                         if fv is not None:
-                            lines.append(_kv_line(k, _fmt_float(fv, digits), width))
+                            lines.append(_kv_line(diag_str, _fmt_float(fv, digits), width))
                             printed.add(k)
                 # any remaining float-like diagnostics
                 for k, v in diag.items():
@@ -376,5 +385,5 @@ class GlobalFitResult:
             except Exception:
                 lines.append(_kv_line("Keys", "<unavailable>", width))
 
-        lines.append("-" * width)
+        lines.append(f"|{"_" * (width-1)}|")
         return "\n".join(lines)
