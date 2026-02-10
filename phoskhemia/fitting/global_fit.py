@@ -1,5 +1,6 @@
 from typing import Any
 from dataclasses import dataclass
+import warnings
 
 import numpy as np
 from numpy.typing import NDArray
@@ -11,10 +12,104 @@ from phoskhemia.fitting.validation import compute_diagnostics
 from phoskhemia.data.spectrum_handlers import TransientAbsorption
 from phoskhemia.fitting.results import GlobalFitResult
 
+def _z_from_ci_level(ci_level: float) -> float:
+    """
+    Convert two-sided CI level to z for a standard normal.
+    Example: ci_level=0.95 -> z=1.959963984540054
+    """
+    if not (0.0 < ci_level < 1.0):
+        raise ValueError("ci_level must be in (0, 1).")
+
+    # Prefer SciPy if available (project already uses SciPy elsewhere); fall back otherwise.
+    try:
+        from scipy.special import ndtri  # inverse standard normal CDF
+        return float(ndtri(0.5 + 0.5 * ci_level))
+    except Exception:
+        # Fallback: approximate inverse error function not in stdlib; require SciPy.
+        raise ImportError("ci_level requires SciPy (scipy.special.ndtri).")
+
+def transform_params_and_cis(
+        beta: np.ndarray,
+        cov_beta: np.ndarray | None,
+        *,
+        parameterization: str,
+        ci_sigma: float | None = 1.0,      # explicit z-score / # sigmas (default: 1)
+        ci_level: float | None = None,     # two-sided level, e.g. 0.95
+    ) -> tuple[
+        NDArray[np.floating], 
+        NDArray[np.floating] | None, 
+        NDArray[np.floating] | None
+    ]:
+    """
+    Transform fitted parameters and compute confidence intervals.
+
+    Parameters
+    ----------
+    beta : ndarray
+        Fitted parameters (log or linear)
+    cov_beta : ndarray or None
+        Covariance of fitted parameters (in beta-space)
+    parameterization : {"log", "linear"}
+        Parameterization used by the model
+    ci_sigma : float or None
+        z-score / # sigmas for CI half-width. If explicitly provided, overrides ci_level.
+    ci_level : float or None
+        Two-sided confidence level in (0, 1), converted to z.
+
+    Returns
+    -------
+    params : NDArray[np.floating]
+        Parameters in natural space
+    ci_low : NDArray[np.floating] | None
+        Lower confidence bound
+    ci_high : NDArray[np.floating] | None
+        Upper confidence bound
+    """
+
+    beta: NDArray[np.floating] = np.asarray(beta, dtype=float)
+
+    if cov_beta is not None:
+        cov_beta: NDArray[np.floating] | float = np.asarray(cov_beta, dtype=float)
+        sigma: NDArray[np.floating] | float = np.sqrt(np.diag(cov_beta))
+    else:
+        sigma: None = None
+
+    # Determine z
+    if ci_sigma is None:
+        z: float = _z_from_ci_level(ci_level) if ci_level is not None else None
+    else:
+        z: float = float(ci_sigma)
+
+    if parameterization == "log":
+        params: NDArray[np.floating] | float = np.exp(beta)
+
+        if sigma is None or z is None:
+            return params, None, None
+
+        ci_low: NDArray[np.floating] | float = np.exp(beta - z * sigma)
+        ci_high: NDArray[np.floating] | float = np.exp(beta + z * sigma)
+        return params, ci_low, ci_high
+
+    elif parameterization == "linear":
+        params: NDArray[np.floating] = beta.copy()
+
+        if sigma is None or z is None:
+            return params, None, None
+
+        ci_low: NDArray[np.floating] | float = params - z * sigma
+        ci_high: NDArray[np.floating] | float = params + z * sigma
+        return params, ci_low, ci_high
+
+    else:
+        warnings.warn(
+            f"Unknown parameterization '{parameterization}'. "
+            "Assuming linear parameters without CIs."
+        )
+        return beta.copy(), None, None
 
 def fit_global_kinetics(
-        arr,
-        kinetic_model,
+        arr: TransientAbsorption,
+        kinetic_model: KineticModel,
         beta0: NDArray[np.floating],
         *,
         noise: NDArray[np.floating] | None = None,
@@ -139,6 +234,12 @@ def fit_global_kinetics(
     fit: NDArray[np.floating] = traces @ amplitudes.T   # (n_times, n_wl)
     y_fit: NDArray[np.floating] = fit.T.ravel()
     noise_flat: NDArray[np.floating] = np.repeat(noise, n_times)
+    param_type: str = kinetic_model.parameterization()
+    params, ci_low, ci_high = transform_params_and_cis(
+        beta=odr_out.beta,
+        cov_beta=odr_out.cov_beta,
+        parameterization=param_type
+    )
 
     diagnostics: dict[str, float] = compute_diagnostics(
         y_obs=y_obs,
@@ -149,24 +250,26 @@ def fit_global_kinetics(
 
     # Package result
     kinetics: dict[str, float] = {
-        name: float(np.exp(val))
+        name: float(val)
         for name, val in zip(
             kinetic_model.param_names(),
-            beta,
+            params,
         )
     }
-    kinetics_errors: dict[str, float] = {
-        name + "_err": float(np.exp(val) * err)
-        for name, val, err in zip(
-            kinetic_model.param_names(),
-            beta,
-            odr_out.sd_beta,
-        )
-    }
+    kinetics_ci = None
+    if ci_low is not None:
+        kinetics_ci: dict[str, float] = {
+            name + "_ci": (float(low), float(high))
+            for name, low, high in zip(
+                kinetic_model.param_names(),
+                ci_low,
+                ci_high,
+            )
+        }
 
     result: GlobalFitResult = GlobalFitResult(
         kinetics=kinetics,
-        kinetics_errors=kinetics_errors,
+        kinetics_ci=kinetics_ci,
         amplitudes=amplitudes,
         amplitude_errors=amp_errors,
         species=kinetic_model.species_names(),
