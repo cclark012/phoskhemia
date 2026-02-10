@@ -41,4 +41,19 @@ def _normalize_str_list(
     return out
 
 def _block_header(title: str, width: int) -> str:
+    # Construct a header that is centered in a given width.
     return f"{title:-^{width}}"
+
+def _kv_line(key: str, val: str, width: int, key_w: int = 22) -> str:
+    # | key.................. = value............................... |
+    rhs_w = max(0, width - (key_w + 6))
+    v = val if len(val) <= rhs_w else (val[: max(0, rhs_w - 3)] + "...")
+    return f"| {key:<{key_w}} = {v:<{rhs_w}} |"
+
+
+def _safe_float(v) -> float | None:
+    """Tries to convert to float, returning None in case of an Exception."""
+    try:
+        return float(v)
+    except Exception:
+        return None
