@@ -10,7 +10,7 @@ from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.fitting.projections import project_amplitudes, propagate_kinetic_covariance
 from phoskhemia.fitting.validation import compute_diagnostics
 from phoskhemia.data.spectrum_handlers import TransientAbsorption
-from phoskhemia.fitting.results import GlobalFitResult
+from phoskhemia.fitting.results import GlobalFitResult, FitCache
 
 def cov_delta_lognormal(
         beta: NDArray[np.floating],
@@ -94,6 +94,7 @@ def _z_from_ci_level(ci_level: float) -> float:
     Convert two-sided CI level to z for a standard normal.
     Example: ci_level=0.95 -> z=1.959963984540054
     """
+
     if not (0.0 < ci_level < 1.0):
         raise ValueError("ci_level must be in (0, 1).")
 
@@ -104,6 +105,21 @@ def _z_from_ci_level(ci_level: float) -> float:
     except Exception:
         # Fallback: approximate inverse error function not in stdlib; require SciPy.
         raise ImportError("ci_level requires SciPy (scipy.special.ndtri).")
+
+def _ci_level_from_sigma(ci_sigma: float) -> float:
+    """
+    Convert z/sigma to two-sided CI level.
+    Example: ci_sigma=2 -> ci_level=0.9544997361036416
+    """
+
+    if not ci_sigma >= 0:
+        raise ValueError("ci_sigma must be positive.")
+
+    try:
+        from scipy.special import ndtr
+        return float(2 * ndtr(ci_sigma) - 1)
+    except Exception:
+        raise ImportError("ci_sigma requires SciPy (scipy.special.ndtr).")
 
 def transform_params_and_cis(
         beta: np.ndarray,
@@ -186,9 +202,11 @@ def fit_global_kinetics(
         kinetic_model: KineticModel,
         beta0: NDArray[np.floating],
         *,
-        noise: NDArray[np.floating] | None = None,
+        noise: NDArray[np.floating] | float | int | None = None,
         lam: float = 1e-12,
         propagate_kinetic_uncertainty: bool = False,
+        ci_sigma: float | None = None,
+        ci_level: float | None = None,
         debug: bool = False,
     ) -> GlobalFitResult:
     """
@@ -215,7 +233,7 @@ def fit_global_kinetics(
         Structured fit result
     """
 
-    # Input preparation
+    # Input preparation and validation
     data: NDArray[np.floating] = np.asarray(arr, dtype=float)
     times: NDArray[np.floating] = np.asarray(arr.y, dtype=float)
     wl: NDArray[np.floating] = np.asarray(arr.x, dtype=float)
@@ -238,16 +256,18 @@ def fit_global_kinetics(
         if noise.size != n_wl:
             raise ValueError("noise length must match number of wavelengths")
 
-    # Flatten observed data (wavelength-major)
+    # Flatten observed data (wavelength-major) for fitting
     y_obs: NDArray[np.floating] = data.T.ravel()
     t_flat: NDArray[np.floating] = np.tile(times, n_wl)
 
-    # ODR model (kinetics only)
+    # ODR model with separable kinetics and amplitudes
     def odr_model(beta, t):
         try:
+            # Compute the kinetic model
             traces: NDArray[np.floating] = kinetic_model.solve(times, beta)
             fit: NDArray[np.floating] = np.empty((n_times, n_wl))
 
+            # Compute the wavelength-dependent amplitudes separately.
             for i in range(n_wl):
                 coeffs: NDArray[np.floating]
                 coeffs, _, _ = project_amplitudes(
@@ -278,6 +298,7 @@ def fit_global_kinetics(
     amplitudes: NDArray[np.floating] = np.empty((n_wl, n_species))
     amp_errors: NDArray[np.floating] = np.empty_like(amplitudes)
 
+    # Calculate amplitudes and errors
     for i in range(n_wl):
         coeffs: NDArray[np.floating]
         cov: NDArray[np.floating]
@@ -303,18 +324,31 @@ def fit_global_kinetics(
         amplitudes[i] = coeffs
         amp_errors[i] = np.sqrt(np.diag(cov))
 
-    # Diagnostics
-    # Reconstruct fitted signal for diagnostics
+    # Reconstruct fitted signal for validation
     fit: NDArray[np.floating] = traces @ amplitudes.T   # (n_times, n_wl)
     y_fit: NDArray[np.floating] = fit.T.ravel()
     noise_flat: NDArray[np.floating] = np.repeat(noise, n_times)
     param_type: str = kinetic_model.parameterization()
+
+    # Determine desired confidence interval (1σ or ≈68%)
+    if ci_sigma is not None:
+        ci_sigma = float(ci_sigma)
+        ci_level = _ci_level_from_sigma(ci_sigma)
+    elif ci_level is not None:
+        ci_level = float(ci_level)
+        ci_sigma = _z_from_ci_level(ci_level)
+    else:
+        ci_sigma = 1.0  # default: 1σ
+        ci_level = _ci_level_from_sigma(ci_sigma)
+
     params, ci_low, ci_high = transform_params_and_cis(
         beta=odr_out.beta,
         cov_beta=odr_out.cov_beta,
-        parameterization=param_type
+        parameterization=param_type,
+        ci_sigma=ci_sigma,
     )
 
+    # Compute statistical tests (AIC, BIC, χ², etc.)
     diagnostics: dict[str, float] = compute_diagnostics(
         y_obs=y_obs,
         y_fit=y_fit,
@@ -322,20 +356,32 @@ def fit_global_kinetics(
         n_params=kinetic_model.n_params(),
     )
 
+    raw_names: str | list[str] = kinetic_model.param_names()
+    names: list[str] = (
+        [raw_names] 
+        if isinstance(raw_names, str) 
+        else list(raw_names)
+    )
+    raw_species: str | list[str] = kinetic_model.species_names()
+    species: list[str] = (
+        [raw_species]
+        if isinstance(raw_species, str)
+        else list(raw_species)
+    )
     # Package result
     kinetics: dict[str, float] = {
         name: float(val)
         for name, val in zip(
-            kinetic_model.param_names(),
+            names,
             params,
         )
     }
-    kinetics_ci = None
+    kinetics_ci: dict[str, tuple[float, float]] | None = None
     if ci_low is not None:
-        kinetics_ci: dict[str, float] = {
-            name + "_ci": (float(low), float(high))
+        kinetics_ci = {
+            name: (float(low), float(high))
             for name, low, high in zip(
-                kinetic_model.param_names(),
+                names,
                 ci_low,
                 ci_high,
             )
@@ -346,16 +392,22 @@ def fit_global_kinetics(
         kinetics_ci=kinetics_ci,
         amplitudes=amplitudes,
         amplitude_errors=amp_errors,
-        species=kinetic_model.species_names(),
+        species=species,
         wavelengths=wl,
+        times=times,
         diagnostics=diagnostics,
         backend={"odr": odr_out},
-        _cache={
+        _cache = {
+            "lam": lam,
+            "noise": noise,
             "kinetic_model": kinetic_model,
-            "beta": beta,
-            "times": times,
+            "beta": odr_out.beta,
+            "cov_beta": odr_out.cov_beta,
+            "ci_sigma": ci_sigma,
+            "ci_level": ci_level,
+            "parameterization": param_type,
             "traces": traces,
-        },
+        }
     )
 
     return result
