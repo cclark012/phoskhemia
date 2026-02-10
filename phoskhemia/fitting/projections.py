@@ -16,6 +16,46 @@ def project_amplitudes(
     """
     Project kinetic basis functions onto data using
     weighted, Tikhonov-regularized least squares.
+    
+    Tikhonov regularization or Ridge regression is a method 
+    to solve ill-posed inverse problems, such as estimating 
+    the coefficients of multiple-regression models when 
+    variables are highly correlated. Ill-posed problems 
+    often have solutions that are not unique (if solvable
+    at all). In ordinary least squares, the problem of 
+    finding the solution to n linear equations with p 
+    unknown coefficients is stated as: Σⱼᵖ xᵢⱼ ⋅ βⱼ = yᵢ, 
+    (i = 1, 2, ..., n) or, in matrix notation, 𝐘 = 𝐗𝛃, 
+    where 𝐘 is an nx1 vector of the response variables 
+    (or data to fit), 𝐗 is an nxp matrix of 
+    regressors/parameters (sometimes called the design 
+    matrix), and 𝛃 is a px1 vector of unknown parameters.
+    While no exact solution is usually possible (especially 
+    when dealing with real observations for 𝐘), the "best" 
+    solution to the least squares problem is usually chosen
+    such that 𝛃 = argminᵦ S(β) is solved for the objective
+    function S(β) = Σᵢ₌₁ⁿ |yᵢ - Σⱼ₌₁ᵖ Xᵢⱼ ⋅ βⱼ|² = ∥𝐘 - 𝐗𝛃∥²,
+    which in this case is the quadratic form. If the problem
+    is well-posed (i.e. the p columns of 𝐗 are linearly
+    independent), then there is a unique solution given by
+    solving the normal equations: (𝐗ᵀ𝐗)𝛃 = 𝐗ᵀ𝐘, where 𝐗ᵀ𝐗
+    is the normal/moment/Gram matrix and 𝐗ᵀ𝐘 is the moment 
+    matrix of regressand by regressors. 𝛃 is the coefficient 
+    vector of the least squares hyperplane, expressed as 
+    𝛃 = (𝐗ᵀ𝐗)⁻¹𝐗ᵀ𝐘 or 𝛃 = β + (𝐗ᵀ𝐗)⁻¹𝐗ᵀε. If the columns of
+    𝐗 are not linearly dependent, then 𝐗 is a singular 
+    matrix (det(𝐗) = 0) and the solution is not unique. 
+    Tikhonov regularization alleviates the issue of the 
+    near-singular moment matrix 𝐗ᵀ𝐗 by adding positive 
+    elements on the diagonal. This decreases the condition
+    number (effectively how much a function changes for
+    a small change of input). This is accomplished by an 
+    extra term λ𝐈: 𝛃 = (𝐗ᵀ𝐗 + λ𝐈)⁻¹𝐗ᵀ𝐘. This estimator is
+    the solution to the least squares problem with the 
+    constraint 𝛃ᵀ𝛃 = c, which can be expressed as a
+    Lagrangian minimization: argminᵦ ∥𝐘 - 𝐗𝛃∥² + λ(𝛃ᵀ𝛃 - c).
+    As λ approaches 0, the constraint becomes non-binding
+    and the ordinary least squares estimator is recovered.
 
     Parameters
     ----------
@@ -68,7 +108,7 @@ def project_amplitudes(
     traces_w: NDArray[np.floating] = traces * weight
     data_w: NDArray[np.floating] = data * weight
 
-    # Regularized normal equations
+    # Regularized normal equations (Tikhonov regularization)
     CTC: NDArray[np.floating] = traces_w.T @ traces_w + lam * np.eye(n_species)
     CTy: NDArray[np.floating] = traces_w.T @ data_w
     coeffs: NDArray[np.floating]
