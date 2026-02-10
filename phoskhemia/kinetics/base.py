@@ -58,9 +58,11 @@ class KineticModel(ABC):
         return [f"p{i}" for i in range(self.n_params())]
 
     def param_units(self) -> str | list[str | None]:
+        """Units for the fit parameters. None uses no units."""
         return [None] * self.n_params()
     
     def param_descriptions(self) -> str | list[str | None]:
+        """Description of parameters in order of declaration."""
         return [None] * self.n_params()
 
     def species_names(self) -> str | list[str]:
@@ -68,5 +70,17 @@ class KineticModel(ABC):
         return [f"species{i}" for i in range(self.solve(np.array([0.0]), np.zeros(self.n_params())).shape[1])]
     
     def parameterization(self) -> Literal["log", "linear"]:
+        """
+        Return the parameterization to be used for this model.
+
+        "log"    : beta = log(p), p > 0
+        "linear" : beta = p
+
+        Returns
+        -------
+        str
+            The parameterization to be used.
+        """
+
         return "log"
 
