@@ -320,7 +320,7 @@ def compute_diagnostics(
         "AIC": AIC,
         "AICc": AICc,
         "BIC": BIC,
-        "dof": dof,
+        "DoF": dof,
     }
 
 def compute_residual_maps(
