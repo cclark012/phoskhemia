@@ -1,10 +1,14 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from phoskhemia.data.spectrum_handlers import TransientAbsorption
 from phoskhemia.fitting.projections import project_amplitudes
 from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.utils.typing import ArrayFloatAny
+if TYPE_CHECKING:
+    from phoskhemia.data.spectrum_handlers import TransientAbsorption
 
 def r_squared(
         data: ArrayFloatAny, 

@@ -1,11 +1,13 @@
 from __future__ import annotations
+
 import numpy as np
 import copy
 from scipy.signal import convolve
 from numpy.typing import NDArray
-from typing import Callable, Any
+from typing import Callable, Any, TYPE_CHECKING
 
-from phoskhemia.fitting.results import GlobalFitResult
+if TYPE_CHECKING:
+    from phoskhemia.fitting.results import GlobalFitResult
 
 class TransientAbsorption(np.ndarray):
     """

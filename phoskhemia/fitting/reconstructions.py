@@ -1,14 +1,17 @@
-from typing import Any
+from __future__ import annotations
+
+from typing import Any, TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 
-from phoskhemia.data import TransientAbsorption
 from phoskhemia.fitting.results import GlobalFitResult
+if TYPE_CHECKING:
+    from phoskhemia.data.spectrum_handlers import TransientAbsorption
 
 def reconstruct_fit(
-    result: GlobalFitResult,
-) -> TransientAbsorption:
+        result: GlobalFitResult,
+    ) -> TransientAbsorption:
     """
     Reconstruct the fitted transient absorption signal
     from a global kinetic fit.
@@ -33,6 +36,7 @@ def reconstruct_fit(
 
     data: NDArray[np.floating] = traces @ amplitudes.T        # (n_times, n_wl)
 
+    from phoskhemia.data.spectrum_handlers import TransientAbsorption
     return TransientAbsorption(
         data,
         x=wavelengths,
@@ -40,9 +44,9 @@ def reconstruct_fit(
     )
 
 def reconstruct_species(
-    result: GlobalFitResult,
-    species: int | str,
-) -> TransientAbsorption:
+        result: GlobalFitResult,
+        species: int | str,
+    ) -> TransientAbsorption:
     """
     Reconstruct the contribution of a single kinetic species
     to the fitted transient absorption signal.
@@ -80,6 +84,7 @@ def reconstruct_species(
 
     data: NDArray[np.floating] = np.outer(traces[:, idx], amplitudes[:, idx])
 
+    from phoskhemia.data.spectrum_handlers import TransientAbsorption
     return TransientAbsorption(
         data,
         x=wavelengths,

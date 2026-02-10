@@ -1,4 +1,6 @@
-from typing import Any
+from __future__ import annotations
+
+from typing import Any, TYPE_CHECKING
 from dataclasses import dataclass
 import warnings
 
@@ -9,8 +11,9 @@ from scipy import odr
 from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.fitting.projections import project_amplitudes, propagate_kinetic_covariance
 from phoskhemia.fitting.validation import compute_diagnostics
-from phoskhemia.data.spectrum_handlers import TransientAbsorption
 from phoskhemia.fitting.results import GlobalFitResult, FitCache
+if TYPE_CHECKING:
+    from phoskhemia.data.spectrum_handlers import TransientAbsorption
 
 def cov_delta_lognormal(
         beta: NDArray[np.floating],
