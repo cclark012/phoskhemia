@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import numpy as np
 import copy
+from typing import Callable, Any, TYPE_CHECKING
+
+import numpy as np
 from scipy.signal import convolve
 from numpy.typing import NDArray
-from typing import Callable, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from phoskhemia.fitting.results import GlobalFitResult
@@ -46,6 +47,10 @@ class TransientAbsorption(np.ndarray):
     y: NDArray[np.floating]
     """ 1D array of time values.
     """
+    meta: dict[str, Any]
+    """ Dictionary of other metadata.
+    """
+
 
     _SUPPORTED_ARRAY_FUNCTIONS: set = {
         np.all,
@@ -108,6 +113,7 @@ class TransientAbsorption(np.ndarray):
             input_array: NDArray[np.floating], 
             x: NDArray[np.floating] | None=None, 
             y: NDArray[np.floating] | None=None, 
+            meta: dict | None=None,
             dtype: type=float
         ) -> TransientAbsorption:
         """
@@ -170,6 +176,8 @@ class TransientAbsorption(np.ndarray):
             x: NDArray[np.floating] = np.arange(ncols, dtype=float)
         if y is None:
             y: NDArray[np.floating] = np.arange(nrows, dtype=float)
+        if meta is None:
+            meta: dict[str, Any] = {}
 
         x: NDArray[np.floating] = np.asarray(x, dtype=float)
         y: NDArray[np.floating] = np.asarray(y, dtype=float)
@@ -183,6 +191,7 @@ class TransientAbsorption(np.ndarray):
 
         object.__setattr__(obj, "x", x)
         object.__setattr__(obj, "y", y)
+        object.__setattr__(obj, "meta", meta)
 
         # One last validation
         if obj.ndim != 2:
@@ -200,6 +209,7 @@ class TransientAbsorption(np.ndarray):
             return
         object.__setattr__(self, "x", copy.copy(getattr(obj, "x", None)))
         object.__setattr__(self, "y", copy.copy(getattr(obj, "y", None)))
+        object.__setattr__(self, "meta", copy.copy(getattr(obj, "meta", None)))
 
     def __add__(
             self, 
@@ -213,6 +223,7 @@ class TransientAbsorption(np.ndarray):
                 out: TransientAbsorption = res.view(TransientAbsorption)
                 object.__setattr__(out, "x", copy.copy(self.x))
                 object.__setattr__(out, "y", copy.copy(self.y))
+                object.__setattr__(out, "meta", copy.copy(self.meta))
                 return out
 
             except Exception:
@@ -401,6 +412,8 @@ class TransientAbsorption(np.ndarray):
             else:
                 object.__setattr__(out, "y", None)
 
+            object.__setattr__(out, "meta", self.meta)
+
             wrapped_results.append(out)
 
         return tuple(wrapped_results) if returned_tuple else wrapped_results[0]
@@ -526,6 +539,7 @@ class TransientAbsorption(np.ndarray):
         # Attach coords (may be None)
         object.__setattr__(out, "x", new_x)
         object.__setattr__(out, "y", new_y)
+        object.__setattr__(out, "meta", self.meta)
         return out
 
     def __radd__(
@@ -793,8 +807,8 @@ class TransientAbsorption(np.ndarray):
                     new_data[idx_new, :] = np.average(stack, axis=0)
 
             return (
-                TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y)) 
-                if axis == 1 else TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax)
+                TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y), meta=copy.copy(self.meta)) 
+                if axis == 1 else TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax, meta=copy.copy(self.meta))
             )
 
         # Non-overlapping arrays
@@ -810,8 +824,8 @@ class TransientAbsorption(np.ndarray):
                 new_ax: NDArray[np.floating] = comb
                 new_data: NDArray[np.floating] = np.concatenate((np.array(arr1), np.array(arr2)), axis=axis)
                 return (
-                    TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y)) 
-                    if axis == 1 else TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax)
+                    TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y), meta=copy.copy(self.meta)) 
+                    if axis == 1 else TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax, meta=copy.copy(self.meta))
                 )
 
             # Fill values between arrays with fill_value using the average stepsize of the two axes.
@@ -823,13 +837,13 @@ class TransientAbsorption(np.ndarray):
                     new_data: NDArray[np.floating] = np.zeros((len(arr1.y), len(new_ax))) + fill_val
                     new_data[:, :len(ax1)] = np.array(arr1)
                     new_data[:, len(ax1)+len(filled):] = np.array(arr2)
-                    return TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y))
+                    return TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y), meta=copy.copy(self.meta))
 
                 elif axis == 0:
                     new_data: NDArray[np.floating] = np.zeros((len(new_ax), len(arr1.x))) + fill_val
                     new_data[:len(ax1), :] = np.array(arr1)
                     new_data[len(ax1)+len(filled):, :] = np.array(arr2)
-                    return TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax)
+                    return TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax, meta=copy.copy(self.meta))
 
     def fit_global_kinetics(
         self,
@@ -961,6 +975,7 @@ class TransientAbsorption(np.ndarray):
         result: TransientAbsorption = out.view(TransientAbsorption)
         result.x = self.x
         result.y = self.y
+        result.meta = self.meta
 
         return result
 
