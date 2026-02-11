@@ -10,6 +10,15 @@ from numpy.typing import NDArray
 from phoskhemia.kinetics.base import KineticModel
 
 SummaryStyle = Literal["brief", "technical", "journal", "verbose"]
+@dataclass(frozen=True)
+class ReportRow:
+    key: str
+    value: str
+
+@dataclass(frozen=True)
+class ReportBlock:
+    title: str
+    rows: list[ReportRow]
 
 def cov_delta_lognormal(
         beta: NDArray[np.floating],
