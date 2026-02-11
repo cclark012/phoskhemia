@@ -11,6 +11,82 @@ from phoskhemia.kinetics.base import KineticModel
 
 SummaryStyle = Literal["brief", "technical", "journal", "verbose"]
 
+def cov_delta_lognormal(
+        beta: NDArray[np.floating],
+        cov_beta: NDArray[np.floating],
+    ) -> NDArray[np.floating]:
+    """
+    Linear approximation for covariance in natural space for p = exp(β) with β ~ 𝒩(μ, Σ).
+
+    Parameters
+    ----------
+    beta : NDArray[np.floating]
+        Vector of fit parameters.
+    cov_beta : NDArray[np.floating]
+        Covariance of beta.
+
+    Returns
+    -------
+    NDArray[np.floating]
+        Covariance of p in natural space.
+    """
+
+    beta: NDArray[np.floating] = np.asarray(beta, dtype=float).reshape(-1)
+    S: NDArray[np.floating] = np.asarray(cov_beta, dtype=float)
+    if S.shape[0] != S.shape[1] or S.shape[0] != beta.shape[0]:
+        raise ValueError("Shape mismatch: beta must be (k,), cov_beta must be (k,k).")
+
+    J: NDArray[np.floating] = np.diag(np.exp(beta))
+    return J @ S @ J
+
+def cov_lognormal(
+        beta: NDArray[np.floating],
+        cov_beta: NDArray[np.floating],
+    ) -> NDArray[np.floating]:
+    """
+    Exact covariance in natural space for p = exp(β) with β ~ 𝒩(μ, Σ).
+    
+    Because residuals are usually assumed to follow a normal distribution,
+    parameters fit in log-space follow a log-normal distribution in natural-space.
+    To obtain the covariance values in natural space the log-space covariances 
+    are transformed according to: 
+    Σ(pᵢ, pⱼ) = exp(μᵢ + μⱼ + ½(Σᵢᵢ + Σⱼⱼ)) ⋅ (exp(Σᵢⱼ) - 1)
+    Where Σ(pᵢ, pⱼ) is the covariance of parameters pᵢ with respect to pⱼ.
+    μᵢ, μⱼ are the mean values of parameters βᵢ and βⱼ (the log-space values).
+    Σᵢᵢ, Σⱼⱼ are the self-correlation values (variance) of βᵢ and βⱼ.
+    Σᵢⱼ is the covariance of parameters βᵢ and βⱼ.
+
+    Parameters
+    ----------
+    beta : (k,) ndarray
+        Vector of fit parameters.
+    cov_beta : (k,k) ndarray
+        Covariance of beta.
+
+    Returns
+    -------
+    cov_p : (k,k) ndarray
+        Exact covariance of p in natural space (multivariate log-normal).
+
+    Raises
+    ------
+    ValueError
+        Raised if cov_beta is not of shape (k, k).
+    """
+
+    beta: NDArray[np.floating] = np.asarray(beta, dtype=float).reshape(-1)
+    S: NDArray[np.floating] = np.asarray(cov_beta, dtype=float)
+    if S.shape[0] != S.shape[1] or S.shape[0] != beta.shape[0]:
+        raise ValueError("Shape mismatch: beta must be (k,), cov_beta must be (k,k).")
+
+    diag: NDArray[np.floating] = np.diag(S)
+    # A_ij = exp(beta_i + beta_j + 0.5*(S_ii + S_jj))
+    A: NDArray[np.floating] = (
+        np.exp(beta[:, None] + beta[None, :] 
+        + 0.5 * (diag[:, None] + diag[None, :]))
+    )
+    cov_p: NDArray[np.floating] = A * (np.exp(S) - 1.0)
+    return cov_p
 
 def _fmt_float(x: float, digits: int = 3) -> str:
     """Compact numeric formatting: fixed for moderate values, scientific otherwise."""
@@ -93,6 +169,14 @@ def _top_correlations(
     # Sort the pairs by the magnitude of their correlation.
     pairs.sort(key=lambda t: abs(t[2]), reverse=True)
     return pairs[: max(0, int(top_n))]
+
+def _cov_for_summary(self) -> NDArray[np.floating] | None:
+    if self.cov_beta is None:
+        return None
+    if self.parameterization == "linear":
+        return self.cov_beta
+    # log: prefer delta natural covariance for readability
+    return cov_delta_lognormal(self.beta, self.cov_beta)
 
 class FitCache(TypedDict):
     lam: float
@@ -243,11 +327,11 @@ class GlobalFitResult:
 
         lines: list[str] = []
 
-        # ---------------- Header ----------------
+        #1). ---------------- Header ----------------
         title: str = "Global Fit Summary" if style != "journal" else "Global Kinetic Fit Report"
         lines.append(_block_header(title, width))
 
-        # ---------------- Overview ----------------
+        #2). ---------------- Overview ----------------
         lines.append(_kv_line("Model", model_name, width))
         lines.append(_kv_line("Parameterization", str(getattr(self, "parameterization", "<unknown>")), width))
         if n_species is not None:
@@ -264,7 +348,7 @@ class GlobalFitResult:
         # brief stops early: only one diagnostics line (if any) + params
         # technical/journal/verbose add more blocks
 
-        # ---------------- Kinetics table ----------------
+        #3). ---------------- Kinetics table ----------------
         lines.append(_block_header("Kinetic parameters", width))
 
         # Respect max_params
@@ -302,7 +386,7 @@ class GlobalFitResult:
         if n_show < n_params:
             lines.append(_kv_line("…", f"{n_params - n_show} more parameters", width, key_w=18))
 
-        # ---------------- Diagnostics ----------------
+        #4). ---------------- Diagnostics ----------------
         if getattr(self, "diagnostics", None):
             lines.append(_block_header("Diagnostics", width))
             diag: dict[str, float] = dict(self.diagnostics)
@@ -334,7 +418,7 @@ class GlobalFitResult:
                     if fv is not None:
                         lines.append(_kv_line(str(k), _fmt_float(fv, digits), width))
 
-        # ---------------- Fit config (technical/journal/verbose) ----------------
+        #5). ---------------- Fit config (technical/journal/verbose) ----------------
         if style in {"technical", "journal", "verbose"}:
             lines.append(_block_header("Fit configuration", width))
             lam: float = self._cache.get("lam", None)
@@ -355,7 +439,7 @@ class GlobalFitResult:
                         )
                     )
 
-        # ---------------- Correlations (technical/journal/verbose) ----------------
+        #6). ---------------- Correlations (technical/journal/verbose) ----------------
         if include_correlations and (self.cov_beta is not None) and (n_params >= 2):
             top: list[tuple[str, str, float]] = (
                 _top_correlations(self.cov_beta, param_names, top_n=corr_top_n)
@@ -365,7 +449,7 @@ class GlobalFitResult:
                 for a, b, r in top:
                     lines.append(_kv_line(f"{a} ↔ {b}", _fmt_float(r, digits), width, key_w=26))
 
-        # ---------------- Amplitude summary (optional / verbose) ----------------
+        #7). ---------------- Amplitude summary (optional / verbose) ----------------
         if include_amplitudes or style == "verbose":
             A: NDArray[np.floating] | None = getattr(self, "amplitudes", None)
             if A is not None:
@@ -376,7 +460,7 @@ class GlobalFitResult:
                 if getattr(self, "species", None):
                     lines.append(_kv_line("Species names", ", ".join(map(str, self.species)), width))
 
-        # ---------------- Backend (verbose only) ----------------
+        #8). ---------------- Backend (verbose only) ----------------
         if style == "verbose":
             lines.append(_block_header("Backend", width))
             try:
