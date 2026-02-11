@@ -224,6 +224,8 @@ def fit_global_kinetics(
 
     amplitudes: NDArray[np.floating] = np.empty((n_wl, n_species))
     amp_errors: NDArray[np.floating] = np.empty_like(amplitudes)
+    # Scale covariance based on residual variance
+    cov_beta: NDArray[np.floating] = odr_out.cov_beta * odr_out.res_var
 
     # Calculate amplitudes and errors
     for i in range(n_wl):
@@ -242,7 +244,7 @@ def fit_global_kinetics(
                 times,
                 beta,
                 coeffs,
-                odr_out.cov_beta,
+                cov_beta,
                 data[:, i],
                 noise[i],
                 lam,
@@ -270,7 +272,7 @@ def fit_global_kinetics(
 
     params, ci_low, ci_high = transform_params_and_cis(
         beta=odr_out.beta,
-        cov_beta=odr_out.cov_beta,
+        cov_beta=cov_beta,
         parameterization=param_type,
         ci_sigma=ci_sigma,
     )
@@ -329,7 +331,7 @@ def fit_global_kinetics(
             "noise": noise,
             "kinetic_model": kinetic_model,
             "beta": odr_out.beta,
-            "cov_beta": odr_out.cov_beta,
+            "cov_beta": cov_beta,
             "ci_sigma": ci_sigma,
             "ci_level": ci_level,
             "parameterization": param_type,
