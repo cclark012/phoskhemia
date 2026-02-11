@@ -139,7 +139,6 @@ def _kv_line(key: str, val: str, width: int, key_w: int = 22) -> str:
     v = val if len(val) <= rhs_w else (val[: max(0, rhs_w - 3)] + "...")
     return f"| {key:<{key_w}} = {v:<{rhs_w}} |"
 
-
 def _safe_float(v) -> float | None:
     """Tries to convert to float, returning None in case of an Exception."""
     try:
@@ -201,19 +200,18 @@ def _cov_for_summary(result: GlobalFitResult) -> tuple[NDArray[np.floating] | No
     # log-parameterization: choose delta (fast/readable default)
     return cov_delta_lognormal(result.beta, covb), "natural (delta, lognormal)"
 
-def format_summary(
-        result: GlobalFitResult,
+def build_fit_report(
+        result: "GlobalFitResult",
         *,
         style: SummaryStyle = "brief",
         digits: int = 3,
         max_params: int | None = None,
-        width: int = 72,
         include_correlations: bool | None = None,
         corr_top_n: int = 5,
         include_amplitudes: bool = False,
-    ) -> str:
+    ) -> list[ReportBlock]:
     """
-    Human-readable summary string.
+    Creates a list of summary blocks for reporting/saving.
 
     Styles:
         - brief: minimal essentials (model + parameters + minimal diagnostics)
@@ -222,26 +220,56 @@ def format_summary(
         - verbose: near-complete dump (includes backend keys and extra blocks)
     """
 
-    style: str = str(style).casefold().strip()
+    style = str(style).casefold().strip()
     if style not in {"brief", "technical", "journal", "verbose"}:
         raise ValueError("style must be one of: 'brief', 'technical', 'journal', 'verbose'")
 
     if include_correlations is None:
         include_correlations = style in {"technical", "journal", "verbose"}
 
-    # --- Basic identity / sizes ---
-    km: KineticModel = result.kinetic_model
-    model_name: str = type(km).__name__ if km is not None else "<unknown model>"
+    blocks: list[ReportBlock] = []
 
-    # Prefer the ordering in kinetics dict (already constructed from names)
-    param_names: list[str] = list(map(str, result.kinetics.keys()))
-    n_params: int = len(param_names)
+    #1). ---- Overview ----
+    km = result.kinetic_model
+    model_name = type(km).__name__ if km is not None else "<unknown model>"
 
-    # Axes / shapes
-    n_times: int | None = int(result.times.size) if getattr(result, "times", None) is not None else None
-    n_wl: int | None = int(result.wavelengths.size) if getattr(result, "wavelengths", None) is not None else None
-    n_points: int | None = (n_times * n_wl) if (n_times is not None and n_wl is not None) else None
-    n_species: int | None = len(result.species) if getattr(result, "species", None) is not None else None
+    # Axes and their shapes
+    n_times = int(result.times.size) if result.times is not None else None
+    n_wl = int(result.wavelengths.size) if result.wavelengths is not None else None
+    n_points = (n_times * n_wl) if (n_times is not None and n_wl is not None) else None
+    n_species = len(result.species) if result.species is not None else None
+
+    # CI information
+    ci_sigma = getattr(result, "ci_sigma", None)
+    ci_level = getattr(result, "ci_level", None)
+    ci_parts: list[str] = []
+    if ci_sigma is not None:
+        ci_parts.append(f"z={_fmt_float(float(ci_sigma), digits)}")
+    if ci_level is not None:
+        ci_parts.append(f"level={_fmt_float(100.0*float(ci_level), digits)}%")
+    ci_spec = ", ".join(ci_parts) if ci_parts else "unavailable"
+
+    overview_rows = [
+        ReportRow("Model", model_name),
+        ReportRow("Parameterization", str(getattr(result, "parameterization", "<unknown>"))),
+        ReportRow("CI spec", ci_spec),
+    ]
+    if n_species is not None:
+        overview_rows.append(ReportRow("Species", str(n_species)))
+    if n_points is not None:
+        overview_rows.append(ReportRow("Data points", f"{n_points} (n_times={n_times}, n_wl={n_wl})"))
+    else:
+        if n_times is not None:
+            overview_rows.append(ReportRow("n_times", str(n_times)))
+        if n_wl is not None:
+            overview_rows.append(ReportRow("n_wavelengths", str(n_wl)))
+
+    blocks.append(ReportBlock("Overview", overview_rows))
+
+    #2). ---- Kinetic parameters ----
+    param_names = list(map(str, result.kinetics.keys()))
+    n_params = len(param_names)
+    n_show = n_params if max_params is None else min(n_params, int(max_params))
 
     # Optional metadata from kinetic model
     units: list[str | None] = (
@@ -252,16 +280,6 @@ def format_summary(
         _normalize_str_list(getattr(km, "param_descriptions", lambda: None)(), n_params) 
         if km is not None else [None] * n_params
     )
-
-    # CI spec
-    ci_sigma: float = getattr(result, "ci_sigma", None)
-    ci_level: float = getattr(result, "ci_level", None)
-    ci_spec: list[str] = []
-    if ci_sigma is not None:
-        ci_spec.append(f"z={_fmt_float(float(ci_sigma), digits)}")
-    if ci_level is not None:
-        ci_spec.append(f"level={_fmt_float(100.0*float(ci_level), digits)}%")
-    ci_spec_s: str = ", ".join(ci_spec) if ci_spec else "unavailable"
 
     # Diagnostics ordering (stable)
     preferred_diag: dict[str, str] = {
@@ -274,35 +292,6 @@ def format_summary(
         "BIC": "BIC"
         }
 
-    lines: list[str] = []
-
-    #1). ---------------- Header ----------------
-    title: str = "Global Fit Summary" if style != "journal" else "Global Kinetic Fit Report"
-    lines.append(_block_header(title, width))
-
-    #2). ---------------- Overview ----------------
-    lines.append(_kv_line("Model", model_name, width))
-    lines.append(_kv_line("Parameterization", str(getattr(result, "parameterization", "<unknown>")), width))
-    if n_species is not None:
-        lines.append(_kv_line("Species", str(n_species), width))
-    if n_points is not None:
-        lines.append(_kv_line("Data points", f"{n_points} (n_times={n_times}, n_wl={n_wl})", width))
-    else:
-        if n_times is not None:
-            lines.append(_kv_line("n_times", str(n_times), width))
-        if n_wl is not None:
-            lines.append(_kv_line("n_wavelengths", str(n_wl), width))
-    lines.append(_kv_line("CI spec", ci_spec_s, width))
-
-    # brief stops early: only one diagnostics line (if any) + params
-    # technical/journal/verbose add more blocks
-
-    #3). ---------------- Kinetics table ----------------
-    lines.append(_block_header("Kinetic parameters", width))
-
-    # Respect max_params
-    n_show: int = n_params if max_params is None else min(n_params, int(max_params))
-    # values
     value: float
     unit: str | None
     dsc: str | None
@@ -310,8 +299,8 @@ def format_summary(
     base: str
     lo: float
     hi: float
-    ci_s: str
-    val: str
+    fv: float | None
+    rows: list[ReportRow] = []
     for i, name in enumerate(param_names[:n_show]):
         value = float(result.kinetics[name])
         unit = units[i]
@@ -321,107 +310,110 @@ def format_summary(
 
         if result.kinetics_ci is not None and name in result.kinetics_ci:
             lo, hi = result.kinetics_ci[name]
-            ci_s = f"[{_fmt_float(lo, digits)}, {_fmt_float(hi, digits)}]"
-            val = f"{base}  CI {ci_s}"
-        else:
-            val = base
+            base = f"{base}  CI [{_fmt_float(lo, digits)}, {_fmt_float(hi, digits)}]"
 
-        # In journal/verbose, include descriptions if available
         if style in {"journal", "verbose"} and dsc:
-            val = f"{val}  — {dsc}"
+            base = f"{base}  — {dsc}"
 
-        lines.append(_kv_line(name, val, width, key_w=18))
+        rows.append(ReportRow(name, base))
 
     if n_show < n_params:
-        lines.append(_kv_line("…", f"{n_params - n_show} more parameters", width, key_w=18))
+        rows.append(ReportRow("…", f"{n_params - n_show} more parameters"))
 
-    #4). ---------------- Diagnostics ----------------
+    blocks.append(ReportBlock("Kinetic parameters", rows))
+
+    #3). ---- Diagnostics ----
     if getattr(result, "diagnostics", None):
-        lines.append(_block_header("Diagnostics", width))
         diag: dict[str, float] = dict(result.diagnostics)
 
-        # brief: single compact line
+        diag_rows: list[ReportRow] = []
         if style == "brief":
             parts: list[str] = []
-            for k in ("chi2_red", "R2", "rmse"):
-                if k in diag.keys():
-                    fv: float | None = _safe_float(diag.get(k))
-                    if fv is not None:
-                        parts.append(f"{preferred_diag[k]}={_fmt_float(fv, digits)}")
-            if parts:
-                lines.append(_kv_line("Key metrics", ", ".join(parts), width))
-        else:
-            printed: set = set()
-            for k in preferred_diag.keys():
+            for k, lab in preferred_diag.items():
                 if k in diag:
-                    fv: float | None = _safe_float(diag.get(k))
-                    diag_str: str = preferred_diag[k]
+                    fv = _safe_float(diag.get(k))
+                    if fv is not None and k in {"chi2_red", "R2", "rmse"}:
+                        parts.append(f"{lab}={_fmt_float(fv, digits)}")
+            if parts:
+                diag_rows.append(ReportRow("Key metrics", ", ".join(parts)))
+        else:
+            printed = set()
+            for k, lab in preferred_diag.items():
+                if k in diag:
+                    fv = _safe_float(diag.get(k))
                     if fv is not None:
-                        lines.append(_kv_line(diag_str, _fmt_float(fv, digits), width))
+                        diag_rows.append(ReportRow(lab, _fmt_float(fv, digits)))
                         printed.add(k)
-            # any remaining float-like diagnostics
             for k, v in diag.items():
                 if k in printed:
                     continue
-                fv: float | None = _safe_float(v)
+                fv = _safe_float(v)
                 if fv is not None:
-                    lines.append(_kv_line(str(k), _fmt_float(fv, digits), width))
+                    diag_rows.append(ReportRow(str(k), _fmt_float(fv, digits)))
 
-    #5). ---------------- Fit config (technical/journal/verbose) ----------------
+        blocks.append(ReportBlock("Diagnostics", diag_rows))
+
+    #4). ---- Fit configuration ----
     if style in {"technical", "journal", "verbose"}:
-        lines.append(_block_header("Fit configuration", width))
-        lam: float = result._cache.get("lam", None)
+        rows: list[str] = []
+        lam: float | None = result._cache.get("lam", None)
         if lam is not None:
-            lines.append(_kv_line("Tikhonov λ", _fmt_float(float(lam), digits), width))
+            rows.append(ReportRow("Tikhonov λ", _fmt_float(float(lam), digits)))
         noise: NDArray[np.floating] = result._cache.get("noise", None)
         if noise is not None:
             nz: NDArray[np.floating] = np.asarray(noise, dtype=float)
             nz = nz[np.isfinite(nz)]
             if nz.size:
-                lines.append(
-                    _kv_line(
+                rows.append(
+                    ReportRow(
                         "Noise σ(λ)",
                         f"min={_fmt_float(float(nz.min()), digits)}, "
                         f"median={_fmt_float(float(np.median(nz)), digits)}, "
                         f"max={_fmt_float(float(nz.max()), digits)}",
-                        width,
                     )
                 )
+        blocks.append(ReportBlock("Fit configuration", rows))
 
-    #6). ---------------- Correlations (technical/journal/verbose) ----------------
-    covb, space = _cov_for_summary(result)
-    if include_correlations and (covb is not None) and (n_params >= 2):
-        top: list[tuple[str, str, float]] = (
-            _top_correlations(covb, param_names, top_n=corr_top_n)
-        )
-        if top: # β-space
-            lines.append(_block_header(f"Top parameter correlations ({space})", width))
-            for a, b, r in top:
-                lines.append(_kv_line(f"{a} ↔ {b}", _fmt_float(r, digits), width, key_w=26))
+    #5). ---- Correlations ----
+    if include_correlations and (result.cov_beta is not None) and (n_params >= 2):
+        cov, cov_label = _cov_for_summary(result)
+        if cov is not None:
+            top = _top_correlations(cov, param_names, top_n=corr_top_n)
+            if top:
+                rows = [ReportRow(f"{a} ↔ {b}", _fmt_float(r, digits)) for a, b, r in top]
+                blocks.append(ReportBlock(f"Top parameter correlations ({cov_label})", rows))
 
-    #7). ---------------- Amplitude summary (optional / verbose) ----------------
+    #6). ---- Amplitudes ----
     if include_amplitudes or style == "verbose":
-        A: NDArray[np.floating] | None = getattr(result, "amplitudes", None)
-        if A is not None:
-            lines.append(_block_header("Amplitudes", width))
-            lines.append(_kv_line("Shape", f"{tuple(A.shape)} (n_wl × n_species)", width))
-            if getattr(result, "amplitude_errors", None) is not None:
-                lines.append(_kv_line("Errors", "available (per wavelength/species; 1σ)", width))
-            if getattr(result, "species", None):
-                lines.append(_kv_line("Species names", ", ".join(map(str, result.species)), width))
+        A: NDArray[np.floating] = result.amplitudes
+        rows = [
+            ReportRow("Shape", f"{tuple(A.shape)} (n_wl × n_species)"),
+            ReportRow("Errors", "available (per wavelength/species; 1σ)"),
+            ReportRow("Species names", ", ".join(map(str, result.species))),
+        ]
+        blocks.append(ReportBlock("Amplitudes", rows))
 
-    #8). ---------------- Backend (verbose only) ----------------
+    #7). ---- Backend ----
     if style == "verbose":
-        lines.append(_block_header("Backend", width))
         try:
             bk: list[Any] = list(result.backend.keys()) if isinstance(result.backend, dict) else []
-            lines.append(_kv_line("Keys", ", ".join(map(str, bk)) if bk else "<none>", width))
+            blocks.append(ReportBlock("Backend", [ReportRow("Keys", ", ".join(map(str, bk)) if bk else "<none>")]))
         except Exception:
-            lines.append(_kv_line("Keys", "<unavailable>", width))
+            blocks.append(ReportBlock("Backend", [ReportRow("Keys", "<unavailable>")]))
 
-    lines.append(f"|{"_" * (width-1)}|")
+    return blocks
+
+def render_terminal_report(blocks: list[ReportBlock], *, width: int = 72) -> str:
+    lines: list[str] = []
+    # top header
+    lines.append(_block_header("Global Fit Summary", width))
+    for block in blocks:
+        lines.append(_block_header(block.title, width))
+        for row in block.rows:
+            lines.append(_kv_line(row.key, row.value, width))
+    # bottom border: keep your preferred width
+    lines.append("|" + ("_" * (width - 1)) + "|")
     return "\n".join(lines)
-
 
 class FitCache(TypedDict):
     lam: float
@@ -498,4 +490,5 @@ class GlobalFitResult:
         raise NotImplementedError
     
     def summary(self, **kwargs) -> str:
-        return format_summary(self, **kwargs)
+        blocks = build_fit_report(self, **kwargs)
+        return render_terminal_report(blocks, width=kwargs.get("width", 72))
