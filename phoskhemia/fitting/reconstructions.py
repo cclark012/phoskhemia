@@ -91,10 +91,10 @@ def reconstruct_species(
 
 
 def reconstruct_residuals(result: GlobalFitResult, data: TransientAbsorption):
-    pass
+    raise NotImplementedError
 
 def reconstruct_weighted_residuals():
-    pass
+    raise NotImplementedError
 
 def reconstruct_species_sum(result: GlobalFitResult, species: list[int | str]):
-    pass
+    raise NotImplementedError
