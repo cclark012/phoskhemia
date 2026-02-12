@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any
+from typing import Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
@@ -58,3 +58,25 @@ def downsample_time(
     meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
     meta.update({"downsample_idx_len": int(idx.size)})
     return TransientAbsorption(data, x=arr.x, y=y, meta=meta)
+
+def make_time_indices(
+        times: NDArray[np.floating],
+        *,
+        method: Literal['log', 'hybrid', 'linear'] = 'log',
+        **kwargs,
+    ) -> NDArray[np.int64]:
+
+    t = np.asarray(times)
+    if method == 'log':
+        indices = time_indices_log(t, **kwargs)
+
+    elif method == 'hybrid':
+        indices = time_indices_hybrid(t, **kwargs)
+
+    elif method == 'linear':
+        raise NotImplementedError
+
+    else:
+        raise ValueError("method must be one of 'log', 'hybrid', or 'linear'")
+
+    return indices
