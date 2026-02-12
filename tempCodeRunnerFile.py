@@ -1,0 +1,1 @@
+    array.time_zero()
