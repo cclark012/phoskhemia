@@ -1,19 +1,54 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Mapping
+from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
 from phoskhemia.data import TransientAbsorption
 
+def _select_file_dialog(
+        *,
+        title: str = "Select MATLAB .mat file",
+        filetypes: tuple[tuple[str, str], ...] = (("MATLAB files", "*.mat"), ("All files", "*.*")),
+    ) -> str:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except Exception as exc:
+        raise RuntimeError("GUI file dialog unavailable (tkinter not installed / no display).") from exc
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    path = filedialog.askopenfilename(title=title, filetypes=filetypes)
+    root.destroy()
+    if not path:
+        raise RuntimeError("No file selected.")
+    return path
+
 
 def load_mat(
-        path: str,
+        path: str | os.PathLike[str] | None = None,
         *,
-        key: str | None = None,
+        key: str | None = "data",
+        gui: bool = False,
         meta: Mapping[str, Any] | None = None,
         store_probe_row: bool = True,
     ) -> TransientAbsorption:
+
+    if path is None:
+        if not gui:
+            raise ValueError("path is required unless gui=True")
+        path = _select_file_dialog()
+
+    path = str(Path(path))
+    if not os.path.exists(path):
+        if gui:
+            path = _select_file_dialog()
+        else:
+            raise FileNotFoundError(path)
 
     d: dict[str, Any] = _read_mat(path)
 
