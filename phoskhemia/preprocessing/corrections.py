@@ -1,9 +1,13 @@
+from __future__ import annotations
+from typing import Any, Literal
 import numpy as np
 import scipy as sp
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 from scipy.linalg import cholesky
+from numpy.typing import NDArray
 from phoskhemia.utils.typing import ArrayFloatAny
+from phoskhemia.data.spectrum_handlers import TransientAbsorption
 
 def arpls(
         array: ArrayFloatAny, 
@@ -334,3 +338,97 @@ def estimate_irf(array: ArrayFloatAny) -> ArrayFloatAny:
     irf, remainder = sp.signal.deconvolve(array, array[cutting_point:])
 
     return irf
+
+
+def find_t0_index(times: NDArray[np.floating]) -> int:
+    times: NDArray[np.floating] = np.asarray(times, dtype=float).reshape(-1)
+    return int(np.argmin(np.abs(times)))
+
+def apply_time_zero(
+        arr: TransientAbsorption, 
+        *, 
+        mode: Literal['truncate', 'truncate_shift', 'shift'] = 'truncate_shift',
+        t0: float | None = None,
+        use_pre_t0_for_noise: bool = True,
+        noise_method: Literal['std', 'mad'] = 'std'
+    ) -> tuple[TransientAbsorption, dict[str, Any]]:
+    """_summary_
+
+    Parameters
+    ----------
+    arr : TransientAbsorption
+        _description_
+    mode : Literal['truncate', 'truncate_shift', 'shift'], optional
+        _description_, by default 'truncate_shift'
+    t0 : float | None, optional
+        _description_, by default None
+    use_pre_t0_for_noise : bool, optional
+        _description_, by default True
+    noise_method : Literal['std', 'mad'], optional
+        _description_, by default 'std'
+
+    Returns
+    -------
+    tuple[TransientAbsorption, dict[str, Any]]
+        _description_
+
+    Raises
+    ------
+    ValueError
+        _description_
+    ValueError
+        _description_
+    """
+
+    data: NDArray[np.floating] = np.asarray(arr)
+    t: NDArray[np.floating] = np.asarray(arr.y, dtype=float)
+    if t0 is None:
+        i0: int = find_t0_index(t)
+    else:
+        t0: float = float(t0)
+        i0: int = int(np.argmin(np.abs(t - t0)))
+
+    info: dict[str, Any] = {"t0": t0, "t0_index": i0, "mode": mode}
+    
+    if use_pre_t0_for_noise and i0 >= 2:
+        pre = data[:i0, :]
+        if noise_method == "std":
+            noise: NDArray[np.floating] = np.std(pre, axis=0, ddof=1)
+        elif noise_method == "mad":
+            med: NDArray[np.floating] = np.median(pre, axis=0)
+            mad: NDArray[np.floating] = np.median(np.abs(pre - med), axis=0)
+            # 1.4826 is the conversion to st. dev. assuming gaussian noise.
+            noise: NDArray[np.floating] = 1.4826 * mad
+        else:
+            raise ValueError("noise_method must be 'std' or 'mad'")
+        info["noise"] = noise
+    
+    if mode == "shift":
+        y_new: NDArray[np.floating] = t - t0
+        meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
+        meta.update(info)
+        if "noise" in info:
+            meta["noise"] = info["noise"]
+        return TransientAbsorption(data, x=arr.x, y=y_new, meta=meta), info
+
+    elif mode == "truncate":
+        data_new: NDArray[np.floating] = data[i0:, :]
+        y_new: NDArray[np.floating] = t[i0:]
+        meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
+        meta.update(info)
+        if "noise" in info:
+            meta["noise"] = info["noise"]
+        return TransientAbsorption(data_new, x=arr.x, y=y_new, meta=meta), info
+
+    elif mode == "truncate_shift":
+        data_new: NDArray[np.floating] = data[i0:, :]
+        y_new: NDArray[np.floating] = t[i0:] - t0
+        meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
+        meta.update(info)
+        if "noise" in info:
+            meta["noise"] = info["noise"]
+        return TransientAbsorption(data_new, x=arr.x, y=y_new, meta=meta), info
+
+    else:
+        raise ValueError("mode must be 'truncate', 'shift', or 'truncate_shift'")
+
