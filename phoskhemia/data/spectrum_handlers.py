@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Callable, Any, TYPE_CHECKING
+from typing import Callable, Any, Literal, TYPE_CHECKING
 
 import numpy as np
 from scipy.signal import convolve
@@ -571,8 +571,8 @@ class TransientAbsorption(np.ndarray):
             self, 
             other: TransientAbsorption, 
             *,
-            mode: str="average", 
-            fill_val: float | None=None
+            mode: Literal['average', 'mean'] = 'average', 
+            fill_val: float | None = None
         ) -> TransientAbsorption:
         """
         Alias for combine().
@@ -581,7 +581,7 @@ class TransientAbsorption(np.ndarray):
         ----------
         other : TransientAbsorption
             The array to combine with.
-        mode : str, optional
+        mode : Literal['average', 'mean'], optional
             How overlapping values are handled, by default "average"
         fill_val : float | None, optional
             How gaps between datasets are handled, by default None
@@ -607,7 +607,7 @@ class TransientAbsorption(np.ndarray):
             self, 
             arr2: TransientAbsorption,
             *,
-            mode: str="average",
+            mode: Literal['average', 'mean'] = 'average',
             fill_val: float | None=None,
         ) -> TransientAbsorption:
         """
@@ -652,7 +652,7 @@ class TransientAbsorption(np.ndarray):
         ----------
         arr2 : TransientAbsorption
             The array to combine with.
-        mode : str, optional
+        mode : Literal['average', 'mean'], optional
             How overlapping values are handled, by default "average".
             Currently accepts "average" and "mean" (which are the same).
         fill_val : float | None, optional
@@ -845,6 +845,16 @@ class TransientAbsorption(np.ndarray):
                     new_data[len(ax1)+len(filled):, :] = np.array(arr2)
                     return TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax, meta=copy.copy(self.meta))
 
+    def downsample_time(
+            self,
+            *,
+            method: Literal['log', 'hybrid'] = 'log',
+            **kwargs
+        ) -> TransientAbsorption:
+        from phoskhemia.preprocessing.downsampling import make_time_indices, downsample_time
+        indices = make_time_indices(self.y, method=method, **kwargs)
+        return downsample_time(self, indices)
+
     def fit_global_kinetics(
         self,
         *args: tuple,
@@ -979,3 +989,12 @@ class TransientAbsorption(np.ndarray):
 
         return result
 
+    def time_zero(
+            self,
+            **kwargs
+        ) -> TransientAbsorption:
+
+        from phoskhemia.preprocessing.corrections import apply_time_zero
+        array, _info = apply_time_zero(self, **kwargs)
+        return array
+    
