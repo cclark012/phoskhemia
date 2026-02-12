@@ -112,6 +112,8 @@ class CompositeKineticModel(KineticModel):
             b: NDArray[np.floating] = beta[idx:idx+k]
             idx += k
             T = m.solve(times, b)  # (n_times, n_species_m)
+            if T.ndim == 1:
+                T = T[:, None]
             parts.append(np.asarray(T, dtype=float))
         if idx != beta.size:
             raise ValueError("beta length mismatch for composite model")
