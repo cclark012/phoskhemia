@@ -384,6 +384,7 @@ def apply_time_zero(
     t: NDArray[np.floating] = np.asarray(arr.y, dtype=float)
     if t0 is None:
         i0: int = find_t0_index(t)
+        t0: float = arr.y[i0]
     else:
         t0: float = float(t0)
         i0: int = int(np.argmin(np.abs(t - t0)))
