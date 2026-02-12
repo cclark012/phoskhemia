@@ -388,7 +388,7 @@ def apply_time_zero(
         t0: float = float(t0)
         i0: int = int(np.argmin(np.abs(t - t0)))
 
-    info: dict[str, Any] = {"t0": t0, "t0_index": i0, "mode": mode}
+    info: dict[str, Any] = {"t0": t0, "index_t0": i0, "mode_t0": mode}
     
     if use_pre_t0_for_noise and i0 >= 2:
         pre = data[:i0, :]
@@ -401,14 +401,14 @@ def apply_time_zero(
             noise: NDArray[np.floating] = 1.4826 * mad
         else:
             raise ValueError("noise_method must be 'std' or 'mad'")
-        info["noise"] = noise
+        info["noise_t0"] = noise
     
     if mode == "shift":
         y_new: NDArray[np.floating] = t - t0
         meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
         meta.update(info)
-        if "noise" in info:
-            meta["noise"] = info["noise"]
+        if "noise_t0" in info:
+            meta["noise_t0"] = info["noise_t0"]
         return TransientAbsorption(data, x=arr.x, y=y_new, meta=meta), info
 
     elif mode == "truncate":
@@ -416,8 +416,8 @@ def apply_time_zero(
         y_new: NDArray[np.floating] = t[i0:]
         meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
         meta.update(info)
-        if "noise" in info:
-            meta["noise"] = info["noise"]
+        if "noise_t0" in info:
+            meta["noise_t0"] = info["noise_t0"]
         return TransientAbsorption(data_new, x=arr.x, y=y_new, meta=meta), info
 
     elif mode == "truncate_shift":
@@ -425,8 +425,8 @@ def apply_time_zero(
         y_new: NDArray[np.floating] = t[i0:] - t0
         meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
         meta.update(info)
-        if "noise" in info:
-            meta["noise"] = info["noise"]
+        if "noise_t0" in info:
+            meta["noise_t0"] = info["noise_t0"]
         return TransientAbsorption(data_new, x=arr.x, y=y_new, meta=meta), info
 
     else:
