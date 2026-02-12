@@ -327,6 +327,7 @@ def build_fit_report(
         diag: dict[str, float] = dict(result.diagnostics)
 
         diag_rows: list[ReportRow] = []
+        # Keep output short for brief
         if style == "brief":
             parts: list[str] = []
             for k, lab in preferred_diag.items():
@@ -375,7 +376,7 @@ def build_fit_report(
         blocks.append(ReportBlock("Fit configuration", rows))
 
     #5). ---- Correlations ----
-    if include_correlations and (result.cov_beta is not None) and (n_params >= 2):
+    if include_correlations and (result.cov_beta is not None) and (n_params >= 2) and style != "brief":
         cov, cov_label = _cov_for_summary(result)
         if cov is not None:
             top = _top_correlations(cov, param_names, top_n=corr_top_n)
@@ -413,6 +414,16 @@ def render_terminal_report(blocks: list[ReportBlock], *, width: int = 72) -> str
             lines.append(_kv_line(row.key, row.value, width))
     # bottom border: keep your preferred width
     lines.append("|" + ("_" * (width - 1)) + "|")
+    return "\n".join(lines)
+
+def render_plain_report(blocks: list[ReportBlock]) -> str:
+    lines: list[str] = []
+    lines.append("Global Fit Summary")
+    for block in blocks:
+        lines.append("")
+        lines.append(block.title)
+        for row in block.rows:
+            lines.append(f"{row.key}: {row.value}")
     return "\n".join(lines)
 
 class FitCache(TypedDict):
@@ -492,3 +503,7 @@ class GlobalFitResult:
     def summary(self, **kwargs) -> str:
         blocks = build_fit_report(self, **kwargs)
         return render_terminal_report(blocks, width=kwargs.get("width", 72))
+
+    def to_text(self, **kwargs) -> str:
+        blocks = build_fit_report(self, **kwargs)
+        return render_plain_report(blocks)
