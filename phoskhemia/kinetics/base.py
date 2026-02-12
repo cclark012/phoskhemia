@@ -1,7 +1,10 @@
-from typing import Literal
+from __future__ import annotations
+from typing import Literal, Sequence
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from numpy.typing import NDArray
 import numpy as np
+
 
 class KineticModel(ABC):
     """
@@ -84,3 +87,52 @@ class KineticModel(ABC):
 
         return "log"
 
+
+@dataclass(frozen=True)
+class CompositeKineticModel(KineticModel):
+    models: tuple[KineticModel, ...]
+    prefixes: tuple[str, ...] | None = None  # optional for namespacing
+
+    def n_params(self) -> int:
+        return sum(m.n_params() for m in self.models)
+
+    def parameterization(self) -> str:
+        # enforce same parameterization for now
+        ps: set[str] = {m.parameterization() for m in self.models}
+        if len(ps) != 1:
+            raise ValueError(f"Composite requires matching parameterizations; got {ps}")
+        return next(iter(ps))
+
+    def solve(self, times: NDArray[np.floating], beta: NDArray[np.floating]) -> NDArray[np.floating]:
+        beta: NDArray[np.floating] = np.asarray(beta, dtype=float).reshape(-1)
+        parts: list[NDArray[np.floating]] = []
+        idx: int = 0
+        for m in self.models:
+            k: int = m.n_params()
+            b: NDArray[np.floating] = beta[idx:idx+k]
+            idx += k
+            T = m.solve(times, b)  # (n_times, n_species_m)
+            parts.append(np.asarray(T, dtype=float))
+        if idx != beta.size:
+            raise ValueError("beta length mismatch for composite model")
+        return np.concatenate(parts, axis=1)
+
+    def species_names(self) -> list[str]:
+        names: list[str] = []
+        for i, m in enumerate(self.models):
+            sn: list[str] | str = m.species_names()
+            sn = [sn] if isinstance(sn, str) else list(sn)
+            if self.prefixes:
+                sn = [f"{self.prefixes[i]}:{s}" for s in sn]
+            names.extend(sn)
+        return names
+
+    def param_names(self) -> list[str]:
+        names: list[str] = []
+        for i, m in enumerate(self.models):
+            pn: list[str] | str = m.param_names()
+            pn = [pn] if isinstance(pn, str) else list(pn)
+            if self.prefixes:
+                pn = [f"{self.prefixes[i]}:{p}" for p in pn]
+            names.extend(pn)
+        return names
