@@ -123,6 +123,158 @@ def transform_params_and_cis(
     )
     return beta.copy(), None, None
 
+def normalize_ci(
+        ci_sigma: float | None=None,
+        ci_level: float | None=None,
+    ) -> tuple[float, float]:
+
+    # Determine desired confidence interval (1σ or ≈68%)
+    if ci_sigma is not None:
+        ci_sigma = float(ci_sigma)
+        ci_level = _ci_level_from_sigma(ci_sigma)
+
+    elif ci_level is not None:
+        ci_level = float(ci_level)
+        ci_sigma = _z_from_ci_level(ci_level)
+
+    else:
+        ci_sigma = 1.0  # default: 1σ
+        ci_level = _ci_level_from_sigma(ci_sigma)
+    
+    return ci_sigma, ci_level
+
+def package_result(
+        odr_out: odr.Output,
+        kinetic_model: KineticModel,
+        times: NDArray[np.floating],
+        wl: NDArray[np.floating],
+        data: NDArray[np.floating],
+        y_obs: NDArray[np.floating],
+        noise: NDArray[np.floating],
+        lam: float,
+        ci_sigma: float | None,
+        ci_level: float | None,
+        propagate_kinetic_uncertainty: bool
+    ) -> GlobalFitResult:
+    
+    n_wl = len(wl)
+    n_times = len(times)
+    
+    # Post-fit reconstruction
+    beta: NDArray[np.floating] = odr_out.beta
+    traces: NDArray[np.floating] = kinetic_model.solve(times, beta)
+    n_species: int = traces.shape[1]
+
+    amplitudes: NDArray[np.floating] = np.empty((n_wl, n_species))
+    amp_errors: NDArray[np.floating] = np.empty_like(amplitudes)
+    # Scale covariance based on residual variance
+    cov_beta = None
+    if odr_out.cov_beta is not None:
+        cov_beta: NDArray[np.floating] = odr_out.cov_beta * odr_out.res_var
+
+    # Calculate amplitudes and errors
+    for i in range(n_wl):
+        coeffs: NDArray[np.floating]
+        cov: NDArray[np.floating]
+        coeffs, cov, _ = project_amplitudes(
+            traces,
+            data[:, i],
+            noise[i],
+            lam,
+        )
+
+        if propagate_kinetic_uncertainty and cov_beta is not None:
+            cov += propagate_kinetic_covariance(
+                kinetic_model,
+                times,
+                beta,
+                coeffs,
+                cov_beta,
+                data[:, i],
+                noise[i],
+                lam,
+            )
+
+        amplitudes[i] = coeffs
+        amp_errors[i] = np.sqrt(np.diag(cov))
+
+    # Reconstruct fitted signal for validation
+    fit: NDArray[np.floating] = traces @ amplitudes.T   # (n_times, n_wl)
+    y_fit: NDArray[np.floating] = fit.T.ravel()
+    noise_flat: NDArray[np.floating] = np.repeat(noise, n_times)
+    param_type: str = kinetic_model.parameterization()
+    ci_sigma, ci_level = normalize_ci(ci_sigma, ci_level)
+
+    params, ci_low, ci_high = transform_params_and_cis(
+        beta=odr_out.beta,
+        cov_beta=cov_beta,
+        parameterization=param_type,
+        ci_sigma=ci_sigma,
+    )
+
+    # Compute statistical tests (AIC, BIC, χ², etc.)
+    diagnostics: dict[str, float] = compute_diagnostics(
+        y_obs=y_obs,
+        y_fit=y_fit,
+        noise=noise_flat,
+        n_params=kinetic_model.n_params(),
+    )
+
+    raw_names: str | list[str] = kinetic_model.param_names()
+    names: list[str] = (
+        [raw_names] 
+        if isinstance(raw_names, str) 
+        else list(raw_names)
+    )
+    raw_species: str | list[str] = kinetic_model.species_names()
+    species: list[str] = (
+        [raw_species]
+        if isinstance(raw_species, str)
+        else list(raw_species)
+    )
+    # Package result
+    kinetics: dict[str, float] = {
+        name: float(val)
+        for name, val in zip(
+            names,
+            params,
+        )
+    }
+    kinetics_ci: dict[str, tuple[float, float]] | None = None
+    if ci_low is not None:
+        kinetics_ci = {
+            name: (float(low), float(high))
+            for name, low, high in zip(
+                names,
+                ci_low,
+                ci_high,
+            )
+        }
+
+    result: GlobalFitResult = GlobalFitResult(
+        kinetics=kinetics,
+        kinetics_ci=kinetics_ci,
+        amplitudes=amplitudes,
+        amplitude_errors=amp_errors,
+        species=species,
+        wavelengths=wl,
+        times=times,
+        diagnostics=diagnostics,
+        backend={"odr": odr_out},
+        _cache = {
+            "lam": lam,
+            "noise": noise,
+            "kinetic_model": kinetic_model,
+            "beta": odr_out.beta,
+            "cov_beta": cov_beta,
+            "ci_sigma": ci_sigma,
+            "ci_level": ci_level,
+            "parameterization": param_type,
+            "traces": traces,
+        }
+    )
+    return result
+
 
 def fit_global_kinetics(
         arr: TransientAbsorption,
@@ -217,126 +369,18 @@ def fit_global_kinetics(
     odr_mod: odr.Model = odr.Model(odr_model)
     odr_out: odr.Output = odr.ODR(odr_data, odr_mod, beta0=beta0).run()
 
-    # Post-fit reconstruction
-    beta: NDArray[np.floating] = odr_out.beta
-    traces: NDArray[np.floating] = kinetic_model.solve(times, beta)
-    n_species: int = traces.shape[1]
-
-    amplitudes: NDArray[np.floating] = np.empty((n_wl, n_species))
-    amp_errors: NDArray[np.floating] = np.empty_like(amplitudes)
-    # Scale covariance based on residual variance
-    cov_beta: NDArray[np.floating] = odr_out.cov_beta * odr_out.res_var
-
-    # Calculate amplitudes and errors
-    for i in range(n_wl):
-        coeffs: NDArray[np.floating]
-        cov: NDArray[np.floating]
-        coeffs, cov, _ = project_amplitudes(
-            traces,
-            data[:, i],
-            noise[i],
-            lam,
-        )
-
-        if propagate_kinetic_uncertainty:
-            cov += propagate_kinetic_covariance(
-                kinetic_model,
-                times,
-                beta,
-                coeffs,
-                cov_beta,
-                data[:, i],
-                noise[i],
-                lam,
-            )
-
-        amplitudes[i] = coeffs
-        amp_errors[i] = np.sqrt(np.diag(cov))
-
-    # Reconstruct fitted signal for validation
-    fit: NDArray[np.floating] = traces @ amplitudes.T   # (n_times, n_wl)
-    y_fit: NDArray[np.floating] = fit.T.ravel()
-    noise_flat: NDArray[np.floating] = np.repeat(noise, n_times)
-    param_type: str = kinetic_model.parameterization()
-
-    # Determine desired confidence interval (1σ or ≈68%)
-    if ci_sigma is not None:
-        ci_sigma = float(ci_sigma)
-        ci_level = _ci_level_from_sigma(ci_sigma)
-    elif ci_level is not None:
-        ci_level = float(ci_level)
-        ci_sigma = _z_from_ci_level(ci_level)
-    else:
-        ci_sigma = 1.0  # default: 1σ
-        ci_level = _ci_level_from_sigma(ci_sigma)
-
-    params, ci_low, ci_high = transform_params_and_cis(
-        beta=odr_out.beta,
-        cov_beta=cov_beta,
-        parameterization=param_type,
-        ci_sigma=ci_sigma,
-    )
-
-    # Compute statistical tests (AIC, BIC, χ², etc.)
-    diagnostics: dict[str, float] = compute_diagnostics(
-        y_obs=y_obs,
-        y_fit=y_fit,
-        noise=noise_flat,
-        n_params=kinetic_model.n_params(),
-    )
-
-    raw_names: str | list[str] = kinetic_model.param_names()
-    names: list[str] = (
-        [raw_names] 
-        if isinstance(raw_names, str) 
-        else list(raw_names)
-    )
-    raw_species: str | list[str] = kinetic_model.species_names()
-    species: list[str] = (
-        [raw_species]
-        if isinstance(raw_species, str)
-        else list(raw_species)
-    )
-    # Package result
-    kinetics: dict[str, float] = {
-        name: float(val)
-        for name, val in zip(
-            names,
-            params,
-        )
-    }
-    kinetics_ci: dict[str, tuple[float, float]] | None = None
-    if ci_low is not None:
-        kinetics_ci = {
-            name: (float(low), float(high))
-            for name, low, high in zip(
-                names,
-                ci_low,
-                ci_high,
-            )
-        }
-
-    result: GlobalFitResult = GlobalFitResult(
-        kinetics=kinetics,
-        kinetics_ci=kinetics_ci,
-        amplitudes=amplitudes,
-        amplitude_errors=amp_errors,
-        species=species,
-        wavelengths=wl,
+    result: GlobalFitResult = package_result(
+        odr_out=odr_out,
+        kinetic_model=kinetic_model,
         times=times,
-        diagnostics=diagnostics,
-        backend={"odr": odr_out},
-        _cache = {
-            "lam": lam,
-            "noise": noise,
-            "kinetic_model": kinetic_model,
-            "beta": odr_out.beta,
-            "cov_beta": cov_beta,
-            "ci_sigma": ci_sigma,
-            "ci_level": ci_level,
-            "parameterization": param_type,
-            "traces": traces,
-        }
+        wl=wl,
+        data=data,
+        y_obs=y_obs,
+        noise=noise,
+        lam=lam,
+        ci_sigma=ci_sigma,
+        ci_level=ci_level,
+        propagate_kinetic_uncertainty=propagate_kinetic_uncertainty
     )
 
     return result
