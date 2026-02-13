@@ -849,7 +849,7 @@ class TransientAbsorption(np.ndarray):
             self,
             *,
             method: Literal['log', 'hybrid'] = 'log',
-            aggregate: Literal['none', 'mean'] = 'none',
+            aggregate: Literal['none', 'mean', 'median', 'min', 'max'] = 'none',
             **kwargs: Any
         ) -> TransientAbsorption:
 
@@ -857,9 +857,9 @@ class TransientAbsorption(np.ndarray):
         from phoskhemia.preprocessing.downsampling import downsample_time as _downsample_time
         indices = make_time_indices(self.y, method=method, **kwargs)
 
-        if aggregate == 'mean':
+        if aggregate in ['mean', 'median', 'min', 'max']:
             from phoskhemia.preprocessing.downsampling import downsample_time_binned
-            return downsample_time_binned(self, indices)
+            return downsample_time_binned(self, indices, data_stat=aggregate)
 
         elif aggregate =='none':
             return _downsample_time(self, indices)
