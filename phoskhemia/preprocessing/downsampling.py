@@ -13,13 +13,13 @@ def time_indices_uniform(n: int, *, stride: int) -> NDArray[np.int64]:
 def time_indices_log(
         times: NDArray[np.floating], 
         *, 
-        n_keep: int, 
+        n_log: int, 
         eps: float = 1e-12
     ) -> NDArray[np.int64]:
 
     t: NDArray[np.floating] = np.asarray(times, dtype=float).reshape(-1)
-    if n_keep < 2:
-        raise ValueError("n_keep must be >= 2")
+    if n_log < 2:
+        raise ValueError("n_log must be >= 2")
 
     t0: float = t.min()
     # Shift so domain is positive for log, then convert t -> u
@@ -27,7 +27,7 @@ def time_indices_log(
     umin: float
     umax: float
     umin, umax = float(u[0]), float(u[-1])
-    grid: NDArray[np.floating] = np.linspace(umin, umax, n_keep)
+    grid: NDArray[np.floating] = np.linspace(umin, umax, n_log)
     idx: NDArray[np.integer] = np.unique(np.searchsorted(u, grid, side="left"))
     idx[idx >= t.size] = t.size - 1
     return np.unique(np.r_[0, idx, t.size - 1]).astype(np.int64)
@@ -44,7 +44,7 @@ def time_indices_hybrid(
     tail: NDArray[np.int64] = np.where(t > t_dense_max)[0].astype(np.int64)
     if tail.size == 0:
         return dense
-    tail_idx: NDArray[np.int64] = time_indices_log(t[tail], n_keep=n_log)
+    tail_idx: NDArray[np.int64] = time_indices_log(t[tail], n_log=n_log)
     return np.unique(np.r_[dense, tail[tail_idx]])
 
 def downsample_time(
@@ -85,8 +85,8 @@ def downsample_time_binned(
         arr: TransientAbsorption,
         indices: NDArray[np.int64],
         *,
-        time_stat: str = "mean",      # "mean" or "anchor"
-        data_stat: str = "mean",      # currently only mean
+        time_stat: Literal['mean', 'median', 'anchor'] = "mean",      # "mean" or "anchor"
+        data_stat: Literal['mean', 'median', 'min', 'max'] = "mean",      # currently only mean
     ) -> TransientAbsorption:
 
     data: NDArray[np.floating] = np.asarray(arr, dtype=float)
@@ -119,22 +119,49 @@ def downsample_time_binned(
         # Should not happen with the +/- inf edges, but guard anyway
         raise RuntimeError("Empty bin encountered")
 
+    starts: NDArray[np.bool] = np.flatnonzero(np.r_[True, bin_id[1:] != bin_id[:-1]])
+    stops: NDArray[np.bool] = np.r_[starts[1:], bin_id.size]
+    n_bins: int = starts.size
+    assert len(starts) == len(stops), "Number of start and stop indices does not match"
+    assert np.all(stops > starts), "Not all stop indices are greater than their start counterparts"
+
     # Time aggregation, new time values are either 
     # average of each bin or the first time in each bin.
     if time_stat == "mean":
         t_sum: NDArray[np.floating] = np.bincount(bin_id, weights=t, minlength=n_bins)
         t_new: NDArray[np.floating] = (t_sum / counts).astype(float)
+    elif time_stat == "median":
+        t_new = np.array([np.median(t[s:e]) for s, e in zip(starts, stops)], dtype=float)
     elif time_stat == "anchor":
         t_new: NDArray[np.floating] = a.astype(float)
     else:
-        raise ValueError("time_stat must be 'mean' or 'anchor'")
+        raise ValueError("time_stat must be 'mean', 'median', or 'anchor'")
 
     # Data aggregation (loop wavelengths; n_wl small)
     n_wl: int = data.shape[1]
     data_new: NDArray[np.floating] = np.empty((n_bins, n_wl), dtype=float)
-    for j in range(n_wl):
-        s = np.bincount(bin_id, weights=data[:, j], minlength=n_bins)
-        data_new[:, j] = s / counts
+    if data_stat == 'mean':
+        for j in range(n_wl):
+            s: NDArray[np.floating] = np.bincount(bin_id, weights=data[:, j], minlength=n_bins)
+            data_new[:, j] = s / counts
+
+    elif data_stat == "median":
+        for j in range(n_wl):
+            col: NDArray[np.floating] = data[:, j]
+            data_new[:, j] = [np.median(col[s:e]) for s, e in zip(starts, stops)]
+
+    elif data_stat == "max":
+        for j in range(n_wl):
+            col: NDArray[np.floating] = data[:, j]
+            data_new[:, j] = [np.max(col[s:e]) for s, e in zip(starts, stops)]
+
+    elif data_stat == "min":
+        for j in range(n_wl):
+            col: NDArray[np.floating] = data[:, j]
+            data_new[:, j] = [np.min(col[s:e]) for s, e in zip(starts, stops)]
+    else:
+        raise ValueError("data_stat must be one of 'mean', 'median', 'min', or 'max'")
+
 
     meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
     meta.update({
