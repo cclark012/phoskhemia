@@ -80,3 +80,67 @@ def make_time_indices(
         raise ValueError("method must be one of 'log', 'hybrid', or 'linear'")
 
     return indices
+
+def downsample_time_binned(
+        arr: TransientAbsorption,
+        indices: NDArray[np.int64],
+        *,
+        time_stat: str = "mean",      # "mean" or "anchor"
+        data_stat: str = "mean",      # currently only mean
+    ) -> TransientAbsorption:
+
+    data: NDArray[np.floating] = np.asarray(arr, dtype=float)
+    t: NDArray[np.floating] = np.asarray(arr.y, dtype=float).reshape(-1)
+
+    idx: NDArray[np.int64] = np.asarray(indices, dtype=np.int64)
+    if idx.ndim != 1 or idx.size < 2:
+        raise ValueError("indices must be 1D with at least 2 entries")
+    idx = np.unique(idx)
+    if idx[0] != 0:
+        idx = np.r_[0, idx]
+    if idx[-1] != t.size - 1:
+        idx = np.r_[idx, t.size - 1]
+
+    a: NDArray[np.floating] = t[idx]
+    if np.any(np.diff(a) <= 0):
+        raise ValueError("anchor times must be strictly increasing (check indices and time ordering)")
+
+    # Make bin edges; values will be aggregated between bin edges.
+    n_bins: int = a.size
+    edges: NDArray[np.floating] = np.empty(n_bins + 1, dtype=float)
+    edges[0] = -np.inf
+    edges[-1] = np.inf
+    edges[1:-1] = 0.5 * (a[:-1] + a[1:])
+
+    # Number of values (counts) between each downsampled time value (bins).
+    bin_id: NDArray[np.int64] = np.searchsorted(edges, t, side="right") - 1  # shape (n_times,)
+    counts: NDArray[np.floating] = np.bincount(bin_id, minlength=n_bins).astype(float)
+    if np.any(counts == 0):
+        # Should not happen with the +/- inf edges, but guard anyway
+        raise RuntimeError("Empty bin encountered")
+
+    # Time aggregation, new time values are either 
+    # average of each bin or the first time in each bin.
+    if time_stat == "mean":
+        t_sum: NDArray[np.floating] = np.bincount(bin_id, weights=t, minlength=n_bins)
+        t_new: NDArray[np.floating] = (t_sum / counts).astype(float)
+    elif time_stat == "anchor":
+        t_new: NDArray[np.floating] = a.astype(float)
+    else:
+        raise ValueError("time_stat must be 'mean' or 'anchor'")
+
+    # Data aggregation (loop wavelengths; n_wl small)
+    n_wl: int = data.shape[1]
+    data_new: NDArray[np.floating] = np.empty((n_bins, n_wl), dtype=float)
+    for j in range(n_wl):
+        s = np.bincount(bin_id, weights=data[:, j], minlength=n_bins)
+        data_new[:, j] = s / counts
+
+    meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
+    meta.update({
+        "downsample_method": "binned",
+        "downsample_bins": int(n_bins),
+        "downsample_time_stat": time_stat,
+        "downsample_data_stat": data_stat,
+    })
+    return TransientAbsorption(data_new, x=arr.x, y=t_new, meta=meta)
