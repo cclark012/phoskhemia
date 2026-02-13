@@ -1,6 +1,10 @@
 import numpy as np
+from numpy.typing import NDArray
 import scipy as sp
 from numba import njit, prange
+from scipy.signal import convolve
+
+from phoskhemia.data.spectrum_handlers import TransientAbsorption
 
 def fourier_gaussian_smooth(
         array: np.typing.ArrayLike | list, 
@@ -592,6 +596,123 @@ def smooth_via_OSVHT(
     print(f'{'-' * 55}\n')
 
     return reconstruction
+
+def conv_smooth(
+        arr: TransientAbsorption,
+        window: int | NDArray[np.floating] | tuple[int, int],
+        *,
+        normalize: bool=True,
+        separable_tol: float=1e-10,
+        **kwargs,
+    ) -> TransientAbsorption:
+    """
+    Smooth data using scipy.signal.convolve.
+
+    The data is smoothed by convolving the dataset with a boxcar window of
+    size (ny, nx) or with a user-supplied window function. If the window is
+    2D, then a separation of the window is attempted to perform two 1D smoothing
+    operations. This is done through singular value decomposition, W = UΣVᵀ, 
+    where the columns of U are an orthonormal basis in the "time" direction 
+    while the rows of Vᵀ are an orthonormal basis in the "wavelength" direction.
+    The window is deemed separable if the major components of the decomposition
+    vastly outweigh any other components. This is chosen through the singular
+    values, where the largest singular value denotes the 1st component, the
+    2nd largest denotes the 2nd component, and so on. If the ratio of the 
+    2nd component, Σ₂, to the 1st component, Σ₁, is below some threshold value 
+    (the separable_tol argument, εₜₒₗ), Σ₂ / Σ₁ < εₜₒₗ, then the window is 
+    separable and the smoothing is performed in two 1D passes.
+    
+    Parameters
+    ----------
+    window : int | array-like | tuple
+        Parameters for the window function. If an integer or tuple of integers
+        then a simple moving average is performed (boxcar window). If it is 
+        and array of values then it is interpreted as a provided window function.
+        - int or 1-D array: smooth along x.
+        - (1, nx): smooth along x.
+        - (ny, 1): smooth along y.
+        - (ny, nx): 2-D smoothing.
+    normalize : bool
+        Normalize the window so it sums to 1, by default True.
+    separable_tol : float
+        Relative tolerance for separable-kernel detection, by default 1e-10.
+    **kwargs
+        Passed directly to scipy.signal.convolve
+        (e.g. mode='same', method='auto').
+
+    Notes
+    -----
+    Axis conventions:
+        axis 0 → time (y)
+        axis 1 → wavelength (x)
+    """
+
+    kwargs: dict = {"mode": "same", "method": "auto"} | kwargs
+
+    data: NDArray[np.floating] = np.asarray(arr, dtype=float)
+
+    # Build kernel
+    if isinstance(window, int):
+        if window <= 0:
+            raise ValueError("window length must be positive")
+        kernel: NDArray[np.floating] = np.ones((1, window), dtype=float)
+
+    elif isinstance(window, tuple | list):
+        if len(window) != 2:
+            raise ValueError("window tuple must be (ny, nx)")
+        kernel: NDArray[np.floating] = np.ones(window, dtype=float)
+
+    else:
+        kernel: NDArray[np.floating] = np.asarray(window, dtype=float)
+        if kernel.ndim == 1:
+            kernel = kernel.reshape(1, -1)
+        elif kernel.ndim != 2:
+            raise ValueError("window must be int, 1-D, or 2-D")
+
+    ny: int
+    nx: int
+    ny, nx = kernel.shape
+
+    if normalize:
+        s: float = kernel.sum()
+        if s != 0:
+            kernel = kernel / s
+
+    # 1-D smoothing along x
+    if ny == 1 and nx > 1:
+        horizontal: NDArray[np.floating] = kernel.ravel()
+        out: NDArray[np.floating] = convolve(data, horizontal[None, :], **kwargs)
+
+    # 1-D smoothing along y
+    elif ny > 1 and nx == 1:
+        vertical: NDArray[np.floating] = kernel.ravel()
+        out: NDArray[np.floating] = convolve(data, vertical[:, None], **kwargs)
+
+    # 2-D smoothing
+    else:
+        # Attempt separable acceleration
+        U: NDArray[np.floating]
+        S: NDArray[np.floating]
+        Vt: NDArray[np.floating]
+        U, S, Vt = np.linalg.svd(kernel, full_matrices=False)
+        separable: bool = S.size > 1 and S[1] / S[0] < separable_tol
+
+        if separable:
+            vertical: NDArray[np.floating] = U[:, 0] * np.sqrt(S[0])
+            horizontal: NDArray[np.floating] = Vt[0, :] * np.sqrt(S[0])
+
+            tmp: NDArray[np.floating] = convolve(data, vertical[:, None], **kwargs)
+            out: NDArray[np.floating] = convolve(tmp, horizontal[None, :], **kwargs)
+
+        else:
+            out: NDArray[np.floating] = convolve(data, kernel, **kwargs)
+
+    result: TransientAbsorption = out.view(TransientAbsorption)
+    result.x = arr.x
+    result.y = arr.y
+    result.meta = arr.meta
+
+    return result
 
 if __name__ == "__main__":
     array = np.ones((13, 13))
