@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from phoskhemia.fitting.results import GlobalFitResult
+    from phoskhemia.kinetics.base import KineticModel
 
 class TransientAbsorption(np.ndarray):
     """
@@ -848,19 +849,59 @@ class TransientAbsorption(np.ndarray):
             self,
             *,
             method: Literal['log', 'hybrid'] = 'log',
-            **kwargs
+            aggregate: Literal['none', 'mean'] = 'none',
+            **kwargs: Any
         ) -> TransientAbsorption:
-        from phoskhemia.preprocessing.downsampling import make_time_indices, downsample_time
+
+        from phoskhemia.preprocessing.downsampling import make_time_indices
+        from phoskhemia.preprocessing.downsampling import downsample_time as _downsample_time
         indices = make_time_indices(self.y, method=method, **kwargs)
-        return downsample_time(self, indices)
+
+        if aggregate == 'mean':
+            from phoskhemia.preprocessing.downsampling import downsample_time_binned
+            return downsample_time_binned(self, indices)
+
+        elif aggregate =='none':
+            return _downsample_time(self, indices)
+
+        else:
+            raise ValueError("aggregate must be one of 'mean' or 'none'")
 
     def fit_global_kinetics(
         self,
-        *args: tuple,
-        **kwargs: dict[str, Any],
+        kinetic_model: KineticModel,
+        beta0: NDArray[np.floating],
+        *,
+        noise: NDArray[np.floating] | float | int | None = None,
+        lam: float = 1e-12,
+        propagate_kinetic_uncertainty: bool = False,
+        ci_sigma: float | None = None,
+        ci_level: float | None = None,
+        debug: bool = False,
     ) -> GlobalFitResult:
         """
         Fit data to a kinetic model. See phoskhemia.fitting.global_fit.fit_global_kinetics(). 
+
+        Perform a global kinetic fit using variable projection.
+
+        Parameters
+        ----------
+        kinetic_model : KineticModel
+            Kinetic model instance
+        beta0 : NDArray[np.floating]
+            Initial guesses for kinetic parameters (log-space)
+        noise : NDArray[np.floating] | float | int | None, optional
+            Per-wavelength noise σ(λ)
+        lam : float, optional
+            Tikhonov regularization strength
+        propagate_kinetic_uncertainty : bool, optional
+            Propagate kinetic covariance into amplitude uncertainties
+        ci_sigma : float | None, optional
+        
+        ci_level : float | None, optional
+
+        debug : bool, optional
+            Print diagnostic messages on failures
 
         Returns
         -------
@@ -869,23 +910,88 @@ class TransientAbsorption(np.ndarray):
         """
 
         from phoskhemia.fitting.global_fit import fit_global_kinetics
-        return fit_global_kinetics(self, *args, **kwargs)
+        result = fit_global_kinetics(
+            self, 
+            kinetic_model, 
+            beta0, 
+            noise=noise, 
+            lam=lam, 
+            propagate_kinetic_uncertainty=propagate_kinetic_uncertainty, 
+            ci_sigma=ci_sigma, 
+            ci_level=ci_level, 
+            debug=debug
+        )
+        return result
 
     def smooth(
             self,
             window: int | NDArray[np.floating] | tuple[int, int],
-            **kwargs
+            *,
+            normalize: bool = True,
+            separable_tol: float = 1e-10,
+            **kwargs: Any
         ) -> TransientAbsorption:
+        """_summary_
 
+        Parameters
+        ----------
+        window : int | array-like | tuple
+            Parameters for the window function. If an integer or tuple of integers
+            then a simple moving average is performed (boxcar window). If it is 
+            and array of values then it is interpreted as a provided window function.
+            - int or 1-D array: smooth along x.
+            - (1, nx): smooth along x.
+            - (ny, 1): smooth along y.
+            - (ny, nx): 2-D smoothing.
+        normalize : bool
+            Normalize the window so it sums to 1, by default True.
+        separable_tol : float
+            Relative tolerance for separable-kernel detection, by default 1e-10.
+        **kwargs
+            Passed directly to scipy.signal.convolve
+            (e.g. mode='same', method='auto').
+
+        Returns
+        -------
+        TransientAbsorption
+            _description_
+        """
         from phoskhemia.preprocessing.smoothing import conv_smooth
-        return conv_smooth(self, window, **kwargs)
+        return conv_smooth(self, window, normalize=normalize, separable_tol=separable_tol, **kwargs)
 
     def time_zero(
             self,
-            **kwargs
+            *,
+            mode: Literal['truncate', 'truncate_shift', 'shift'] = 'truncate_shift',
+            t0: float | None = None,
+            use_pre_t0_for_noise: bool = True,
+            noise_method: Literal['std', 'mad'] = 'std'
         ) -> TransientAbsorption:
+        """_summary_
 
+        arr : TransientAbsorption
+            _description_
+        mode : Literal['truncate', 'truncate_shift', 'shift'], optional
+            _description_, by default 'truncate_shift'
+        t0 : float | None, optional
+            _description_, by default None
+        use_pre_t0_for_noise : bool, optional
+            _description_, by default True
+        noise_method : Literal['std', 'mad'], optional
+            _description_, by default 'std'
+
+        Returns
+        -------
+        TransientAbsorption
+            _description_
+        """
         from phoskhemia.preprocessing.corrections import apply_time_zero
-        array, _info = apply_time_zero(self, **kwargs)
+        array, _info = apply_time_zero(
+            self, 
+            mode=mode, 
+            t0=t0, 
+            use_pre_t0_for_noise=use_pre_t0_for_noise, 
+            noise_method=noise_method
+        )
         return array
     
