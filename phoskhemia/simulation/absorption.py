@@ -35,14 +35,3 @@ def dho_absorption(
     )
 
     return np.sum(abs_indiv, axis=0)
-
-if __name__ == "__main__":
-    wavelength1 = np.arange(325, 405, 10)
-    absorption1 = dho_absorption(wavelength1)
-    wavelength = np.arange(250, 450, 0.1)
-    absorption = dho_absorption(wavelength)
-    print(absorption1)
-    import matplotlib.pyplot as plt
-    plt.plot(wavelength, absorption)
-    plt.scatter(wavelength1, absorption1, c='k', s=10)
-    plt.show()
