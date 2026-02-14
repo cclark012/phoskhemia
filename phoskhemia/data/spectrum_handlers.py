@@ -16,9 +16,6 @@ class TransientAbsorption(np.ndarray):
 
     Shape : (n_times, n_wavelengths)
 
-    TODO:
-    1) Add downsampling for large datasets
-
     Attributes
     ----------
     x : ndarray
@@ -111,9 +108,10 @@ class TransientAbsorption(np.ndarray):
     def __new__(
             cls, 
             input_array: NDArray[np.floating], 
-            x: NDArray[np.floating] | None=None, 
-            y: NDArray[np.floating] | None=None, 
-            meta: dict | None=None,
+            x: NDArray[np.floating] | None = None, 
+            y: NDArray[np.floating] | None = None, 
+            meta: dict | None = None,
+            freeze_axes: bool = True,
             dtype: type=float
         ) -> TransientAbsorption:
         """
@@ -181,6 +179,9 @@ class TransientAbsorption(np.ndarray):
 
         x: NDArray[np.floating] = np.asarray(x, dtype=float)
         y: NDArray[np.floating] = np.asarray(y, dtype=float)
+        if freeze_axes:
+            x.flags.writeable = False
+            y.flags.writeable = False
 
         if x.ndim != 1 or y.ndim != 1:
             raise ValueError("x and y must be 1-D arrays")
@@ -957,7 +958,10 @@ class TransientAbsorption(np.ndarray):
             _description_
         """
         from phoskhemia.preprocessing.smoothing import conv_smooth
-        return conv_smooth(self, window, normalize=normalize, separable_tol=separable_tol, **kwargs)
+        result = conv_smooth(self, window, normalize=normalize, separable_tol=separable_tol, **kwargs)
+        meta = dict(self.meta) if getattr(self, "meta", None) is not None else {}
+        meta.update({"smoothed": True, "smooth_window": str(window)})
+        return TransientAbsorption(result, x=self.x, y=self.y, meta=meta)
 
     def spectrum(
         self,
