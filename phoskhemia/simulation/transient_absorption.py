@@ -1,6 +1,6 @@
+from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
-from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
@@ -8,13 +8,12 @@ from typing import Any, Callable, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from phoskhemia.kinetics import KineticModel
-from phoskhemia.data import TransientAbsorption
 
+from phoskhemia.data.spectrum_handlers import TransientAbsorption
 
-# ---------- spectral models (return shape s(lambda), not absolute eps) ----------
 
 SpectrumFn = Callable[[NDArray[np.floating]], NDArray[np.floating]]
+TracesFn = Callable[[NDArray[np.floating]], NDArray[np.floating]]
 
 def anchor_eps(
         wl_nm: NDArray[np.floating],
@@ -33,8 +32,6 @@ def anchor_eps(
         raise ValueError("Reference shape value is zero/invalid; cannot anchor eps")
 
     return (eps_ref / s_ref) * s
-
-# ---------- kinetics models (return trace T(t) with T(0)=1 convention) ----------
 
 def monoexp(times: NDArray[np.floating], tau: float) -> NDArray[np.floating]:
     t = np.asarray(times, dtype=float)
@@ -102,79 +99,70 @@ class NoiseSpec:
     sigma: float = 1e-4
     sigma_lambda: NDArray[np.floating] | None = None
 
+
 def simulate_ta(
-    *,
-    times: NDArray[np.floating],
-    wavelengths_nm: NDArray[np.floating],
-    conc_M: float,
-    spectra: SpeciesSpectra,
-    pump: PumpSpec,
-    tau: float,
-    rng: np.random.Generator,
-    noise: NoiseSpec = NoiseSpec(),
-) -> tuple[TransientAbsorption, dict[str, Any]]:
-    """
-    Minimal: one pumped species with GS bleach + ES absorption, monoexp decay.
-    Produces ΔA(t, λ).
-    """
+        *,
+        times: NDArray[np.floating],
+        wavelengths_nm: NDArray[np.floating],
+        traces: NDArray[np.floating] | None = None,
+        traces_fn: TracesFn | None = None,
+        kinetic_model: Any | None = None,   # KineticModel
+        beta: NDArray[np.floating] | None = None,
+        spectra_dA: NDArray[np.floating] | None = None,        # (K, n_wl)
+        delta_eps: NDArray[np.floating] | None = None,         # (K, n_wl) in M^-1 cm^-1
+        amp_M: NDArray[np.floating] | None = None,             # (K,) concentration scaling
+        pathlength_cm: float = 0.1,
+        sigma_lambda: NDArray[np.floating] | None = None,
+        rng: np.random.Generator | None = None,
+    ) -> tuple[TransientAbsorption, dict[str, Any]]:
+
     t = np.asarray(times, dtype=float).reshape(-1)
     wl = np.asarray(wavelengths_nm, dtype=float).reshape(-1)
 
-    eps_gs = np.asarray(spectra.eps_gs, dtype=float).reshape(-1)
-    eps_es = np.asarray(spectra.eps_es, dtype=float).reshape(-1)
-    if eps_gs.size != wl.size or eps_es.size != wl.size:
-        raise ValueError("eps arrays must match wavelengths")
+    # traces source
+    if traces is None:
+        if traces_fn is not None:
+            traces = np.asarray(traces_fn(t), dtype=float)
+        elif kinetic_model is not None and beta is not None:
+            traces = np.asarray(kinetic_model.solve(t, beta), dtype=float)
+        else:
+            raise ValueError("Provide traces, traces_fn, or (kinetic_model and beta)")
 
-    # pump wavelength eps for excitation fraction
-    eps_pump = float(np.interp(pump.lambda_pump_nm, wl, eps_gs))
-    f_exc = excitation_fraction(eps_pump=eps_pump, conc_M=conc_M, pump=pump)
+    T = np.asarray(traces, dtype=float)
+    if T.ndim != 2 or T.shape[0] != t.size:
+        raise ValueError("traces must be (n_times, K)")
 
-    # populations (simple): excited decays monoexp back to ground
-    T = monoexp(t - t.min(), tau=tau)  # define t0 at first sample for synthetic
-    dC_es = (f_exc * conc_M) * T                # + excited concentration
-    dC_gs = -(f_exc * conc_M) * T               # - ground state (bleach magnitude)
+    K = T.shape[1]
+    n_wl = wl.size
 
-    # ΔA = l * (Δc_gs * eps_gs + Δc_es * eps_es)
-    l = float(pump.pathlength_cm)
-    surface = l * (dC_gs[:, None] * eps_gs[None, :] + dC_es[:, None] * eps_es[None, :])
-
-    # noise
-    if noise.kind == "constant":
-        sigma = float(noise.sigma)
-        sigma_lambda = np.full(wl.size, sigma, dtype=float)
-    elif noise.kind == "sigma_lambda":
-        if noise.sigma_lambda is None:
-            raise ValueError("sigma_lambda required for kind='sigma_lambda'")
-        sigma_lambda = np.asarray(noise.sigma_lambda, dtype=float).reshape(-1)
-        if sigma_lambda.size != wl.size:
-            raise ValueError("sigma_lambda must match wavelengths")
+    # spectra source
+    if spectra_dA is None:
+        if delta_eps is None or amp_M is None:
+            raise ValueError("Provide spectra_dA or (delta_eps and amp_M)")
+        De = np.asarray(delta_eps, dtype=float)
+        a = np.asarray(amp_M, dtype=float).reshape(-1)
+        if De.shape != (K, n_wl) or a.size != K:
+            raise ValueError("delta_eps must be (K,n_wl) and amp_M must be (K,)")
+        S = float(pathlength_cm) * (a[:, None] * De)
     else:
-        raise ValueError("Unknown noise.kind")
+        S = np.asarray(spectra_dA, dtype=float)
+        if S.shape != (K, n_wl):
+            raise ValueError("spectra_dA must be (K,n_wl)")
 
-    noisy = surface + rng.normal(0.0, sigma_lambda[None, :], size=surface.shape)
+    surface = T @ S  # (n_times, n_wl)
 
-    meta = {
-        "synthetic": True,
-        "conc_M": float(conc_M),
-        "pathlength_cm": float(pump.pathlength_cm),
-        "lambda_pump_nm": float(pump.lambda_pump_nm),
-        "f_exc": float(f_exc),
-        "tau": float(tau),
-        "noise_sigma_lambda": sigma_lambda,
-    }
+    if sigma_lambda is None or rng is None:
+        noisy = surface
+    else:
+        sig = np.asarray(sigma_lambda, dtype=float).reshape(-1)
+        if sig.size == 1:
+            noisy = surface + rng.normal(0.0, sig, size=surface.shape)
+        elif sig.size != n_wl:
+            raise ValueError("sigma_lambda must match wavelengths")
+        else:
+            noisy = surface + rng.normal(0.0, sig[None, :], size=surface.shape)
 
-    truth = {
-        "surface_clean": surface,
-        "sigma_lambda": sigma_lambda,
-        "dC_es": dC_es,
-        "dC_gs": dC_gs,
-        "eps_gs": eps_gs,
-        "eps_es": eps_es,
-        "f_exc": f_exc,
-        "pump": pump,
-    }
-
-    return TransientAbsorption(noisy, x=wl, y=t, meta=meta), truth
-
+    truth = {"traces": T, "spectra": S, "surface_clean": surface, "sigma_lambda": sigma_lambda}
+    return TransientAbsorption(noisy, x=wl, y=t, meta={"synthetic": True}), truth
 
 
