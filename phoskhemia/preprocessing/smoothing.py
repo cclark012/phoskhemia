@@ -598,13 +598,13 @@ def smooth_via_OSVHT(
     return reconstruction
 
 def conv_smooth(
-        arr: TransientAbsorption,
+        arr: NDArray[np.floating],
         window: int | NDArray[np.floating] | tuple[int, int],
         *,
         normalize: bool=True,
         separable_tol: float=1e-10,
         **kwargs,
-    ) -> TransientAbsorption:
+    ) -> NDArray[np.floating]:
     """
     Smooth data using scipy.signal.convolve.
 
@@ -707,12 +707,7 @@ def conv_smooth(
         else:
             out: NDArray[np.floating] = convolve(data, kernel, **kwargs)
 
-    result: TransientAbsorption = out.view(TransientAbsorption)
-    result.x = arr.x
-    result.y = arr.y
-    result.meta = arr.meta
-
-    return result
+    return out
 
 if __name__ == "__main__":
     array = np.ones((13, 13))
