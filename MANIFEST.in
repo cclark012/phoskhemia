@@ -1,0 +1,11 @@
+graft phoskhemia
+
+# include small example scripts if you want
+graft examples
+
+# never ship scratch scripts
+prune scripts
+prune notebooks
+prune .github
+
+global-exclude *.pyc *.pyo __pycache__ .DS_Store
