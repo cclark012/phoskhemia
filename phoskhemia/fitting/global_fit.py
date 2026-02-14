@@ -143,6 +143,12 @@ def normalize_ci(
     
     return ci_sigma, ci_level
 
+def sd_lognormal(beta, sd_beta):
+    s2 = sd_beta**2
+    mean_p = np.exp(beta + 0.5*s2)
+    sd_p = mean_p * np.sqrt(np.exp(s2) - 1.0)
+    return sd_p
+
 def package_result(
         odr_out: odr.Output,
         kinetic_model: KineticModel,
