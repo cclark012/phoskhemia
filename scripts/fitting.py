@@ -226,16 +226,29 @@ def run():
     [axes[1].axvline(x=ta.x[w], color='k', lw=0.5, ls='--') for w in range(30, 150, 30)]
     axes[1].legend()
 
+    # cmap1 = mpl.colormaps['rainbow_r']
+    # colors1 = cmap1(np.linspace(0, 1.0, len(idw)))
+    # cmap2 = mpl.colormaps['jet_r']
+    # colors2 = cmap2(np.linspace(0, 1.0, len(idw)))
+    # cmap3 = mpl.colormaps['rainbow_r']
+    # colors3 = cmap3(np.linspace(0, 1.0, len(idt)))
+
+    # [axes[0].plot(times, arr[:, i], color=c, lw=2.5, alpha=0.25, label=f"{wavelength[i]} nm") for i, c in zip(idw, colors1)]
+    # [axes[0].plot(times, decay * (surface[0, i] / np.max(decay)), color='k', lw=0.5, ls='-', label=f"True {wavelength[i]} nm") for i in idw]
+    # [axes[1].plot(wavelength, arr[t, :], lw=2.5, color=c, alpha=0.5, label=f"{times[t] :.1f} ns") for t, c in zip(idt, colors3)]
+    # [axes[1].plot(wavelength, surface[t, :], lw=0.5, color='k', ls='-') for t in idt]
+    # if do_fit:
+    #     [axes[0].plot(fit.y, fit[:, i], color=c, lw=2, ls='--', alpha=0.75, label=f"Fit {wavelength[i]} nm") for i, c in zip(idw, colors2)]
+    #     [axes[1].plot(wavelength, result.amplitudes[:, amp] * np.sum(result.traces[idt[0], :]), color='k', lw=1, ls='--') for amp in range(result.amplitudes.shape[1])]
+
+    # axes[0].set(xlim=(dt, t_max), xscale="log")
+    # axes[1].set(xlim=(np.min(wavelength), np.max(wavelength)))
+    # axes[0].legend()
+    # axes[1].legend(loc="lower right")
+    # axes[0].set(title=f"SNR = {np.max(surface) / sigma :.0f}")
 
     plt.show()
 
 if __name__ == "__main__":
     run()
-    conc1 = 1.e-3
-    conc2 = 1.e-5
-    conc2 = 1.0736201776984685e-06
-    k2 = 4.370893e-09
-    k2s = 2.810063e-08
 
-    # print((k2 / (conc2 * 0.10807776455497914)) * 1e9)
-    # print((k2s / (conc2 * 0.015654385503226054)) * 1e9)
