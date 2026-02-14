@@ -959,6 +959,35 @@ class TransientAbsorption(np.ndarray):
         from phoskhemia.preprocessing.smoothing import conv_smooth
         return conv_smooth(self, window, normalize=normalize, separable_tol=separable_tol, **kwargs)
 
+    def spectrum(
+        self,
+        time: float,
+        *,
+        method: Literal["nearest", "interp"] = "nearest",
+        return_index: bool = False,
+    ) -> NDArray[np.floating] | tuple[NDArray[np.floating], int]:
+        """
+        Return ΔA(λ) at a time.
+        Returns shape (n_wl,).
+        """
+
+        from phoskhemia.utils.indexing import _nearest_index, _bracketing_indices
+        data = np.asarray(self, dtype=float)
+        y = np.asarray(self.y, dtype=float)
+
+        if method == "nearest":
+            i = _nearest_index(y, time)
+            out = data[i, :].copy()
+            return (out, i) if return_index else out
+
+        if method == "interp":
+            i0, i1, w = _bracketing_indices(y, time)
+            out = (1.0 - w) * data[i0, :] + w * data[i1, :]
+            out = np.asarray(out, dtype=float)
+            return (out, i0) if return_index else out
+
+        raise ValueError("method must be 'nearest' or 'interp'")
+
     def time_zero(
             self,
             *,
@@ -994,4 +1023,33 @@ class TransientAbsorption(np.ndarray):
             noise_method=noise_method
         )
         return array
-    
+
+    def trace(
+        self,
+        wavelength_nm: float,
+        *,
+        method: Literal["nearest", "interp"] = "nearest",
+        return_index: bool = False,
+    ) -> NDArray[np.floating] | tuple[NDArray[np.floating], int]:
+        """
+        Return ΔA(t) at a wavelength.
+        Returns shape (n_times,).
+        """
+
+        from phoskhemia.utils.indexing import _nearest_index, _bracketing_indices
+        data = np.asarray(self, dtype=float)
+        x = np.asarray(self.x, dtype=float)
+
+        if method == "nearest":
+            j = _nearest_index(x, wavelength_nm)
+            out = data[:, j].copy()
+            return (out, j) if return_index else out
+
+        if method == "interp":
+            j0, j1, w = _bracketing_indices(x, wavelength_nm)
+            out = (1.0 - w) * data[:, j0] + w * data[:, j1]
+            out = np.asarray(out, dtype=float)
+            return (out, j0) if return_index else out  # j0 = left bracket
+
+        raise ValueError("method must be 'nearest' or 'interp'")
+
