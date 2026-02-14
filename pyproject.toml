@@ -9,7 +9,7 @@ description = 'Library for the handling and analysis of chemical spectroscopic d
 authors = [
     {name = 'Cole Clark', email = 'coleclark012@gmail.com'}
 ]
-license = "MIT"
+license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -30,9 +30,14 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/cclark012/phoskhemia"
 
 [tool.setuptools.package-data]
 "phoskhemia.simulation" = ["data/*.csv"]
+
+[tool.setuptools.packages.find]
+include = ["phoskhemia*"]
+exclude = ["tests*", "examples*", "scripts*", "notebooks*"]
