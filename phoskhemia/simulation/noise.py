@@ -61,53 +61,6 @@ def sigma_lambda_from_probe(
     sigma = sigma + float(floor)
     return sigma
 
-def xenon_irradiance_emulated(
-        wavelengths_nm: NDArray[np.floating],
-        *,
-        temperature_K: float = 6000.0,
-        normalize: bool = True,
-        window_nm: tuple[float, float] | None = None,
-    ) -> NDArray[np.floating]:
-    """
-    Smooth xenon-like continuum surrogate (relative irradiance vs wavelength).
-
-    Simulate an approximate xenon lamp spectrum with Planck's law for blackbody
-    emitters: B(λ, T) = (2hc² / λ⁵) ⋅ [1 / (exp(hc / λkᵦT) - 1)]
-    This is NOT a calibrated xenon lamp spectrum. Use measured / tabulated spectra
-    when realism matters; this is a convenience fallback for synthetic noise.
-    """
-    wl_nm: NDArray[np.floating] = np.asarray(wavelengths_nm, dtype=float).reshape(-1)
-    wl_m: NDArray[np.floating] = wl_nm * 1e-9
-
-    # Planck spectral radiance vs wavelength (up to a constant factor)
-    h: float = 6.62607015e-34
-    c: float = 299792458.0
-    kB: float = 1.380649e-23
-    T: float = float(temperature_K)
-
-    a: float = 2.0 * h * c**2
-    b: float = h * c / (kB * T)
-    x: NDArray[np.floating] = b / wl_m
-    # avoid overflow in exp
-    x = np.clip(x, 1e-9, 700.0)
-    I: NDArray[np.floating] = a / (wl_m**5 * (np.exp(x) - 1.0))
-
-    # Optional broad windowing to focus on a band (e.g., 320–850 nm)
-    if window_nm is not None:
-        lo, hi = map(float, window_nm)
-        # smooth logistic edges
-        s = 5.0  # nm edge softness
-        w = 1.0 / (1.0 + np.exp(-(wl_nm - lo) / s)) * (1.0 / (1.0 + np.exp((wl_nm - hi) / s)))
-        I = I * w
-
-    I = np.where(np.isfinite(I) & (I > 0), I, 0.0)
-
-    if normalize:
-        m = float(np.max(I)) if np.max(I) > 0 else 1.0
-        I = I / m
-
-    return I.astype(float)
-
 def sigma_lambda_from_transmitted(
         lamp_rel: NDArray[np.floating],
         *,
