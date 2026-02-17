@@ -184,6 +184,8 @@ pyrightconfig.json
 # Local Scratch
 scratch/
 notebooks/
+scripts/
+tempCodeRunnerFile.py
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,python
 .vscode/settings.json
