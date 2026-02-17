@@ -71,6 +71,7 @@ class TransientAbsorption(np.ndarray):
         np.cumsum,
         np.diagonal,
         np.dot,
+        np.histogram,
         np.hstack,
         np.max,
         np.mean,
@@ -83,6 +84,7 @@ class TransientAbsorption(np.ndarray):
         np.nanmin,
         np.nanstd,
         np.nanvar,
+        np.ndim,
         np.nonzero,
         np.partition,
         np.prod,
@@ -849,7 +851,7 @@ class TransientAbsorption(np.ndarray):
     def downsample_time(
             self,
             *,
-            method: Literal['log', 'hybrid'] = 'log',
+            method: Literal['log', 'hybrid', 'linear'] = 'log',
             aggregate: Literal['none', 'mean', 'median', 'min', 'max'] = 'none',
             **kwargs: Any
         ) -> TransientAbsorption:
@@ -958,9 +960,11 @@ class TransientAbsorption(np.ndarray):
             _description_
         """
         from phoskhemia.preprocessing.smoothing import conv_smooth
-        result = conv_smooth(self, window, normalize=normalize, separable_tol=separable_tol, **kwargs)
+        result, noise_scale = conv_smooth(self, window, normalize=normalize, separable_tol=separable_tol, **kwargs)
         meta = dict(self.meta) if getattr(self, "meta", None) is not None else {}
         meta.update({"smoothed": True, "smooth_window": str(window)})
+        if meta.get("noise_t0", None) is not None:
+            meta["noise_t0"] *= noise_scale
         return TransientAbsorption(result, x=self.x, y=self.y, meta=meta)
 
     def spectrum(
@@ -991,6 +995,45 @@ class TransientAbsorption(np.ndarray):
             return (out, i0) if return_index else out
 
         raise ValueError("method must be 'nearest' or 'interp'")
+
+    def svd_denoise(
+            self,
+            *,
+            method: Literal["e15", "ek18"] = "ek18",
+            value_rotation: Literal["include", "exclude", "auto"] = "exclude",
+            threshold: float = 0.05,
+            center: Literal["none", "time"] = "time",
+            noise: NDArray[np.floating] | None = None,
+            weight: Literal["none", "column"] = "none",
+            return_details: bool = False,
+        ) -> "TransientAbsorption" | tuple["TransientAbsorption", dict[str, Any]]:
+
+        from phoskhemia.preprocessing.svd_denoise import svd_denoise
+
+        if noise is None and self.meta.get("noise_t0", None) is not None:
+            noise = self.meta["noise_t0"]
+
+        out = svd_denoise(
+            np.asarray(self, dtype=float),
+            method=method,
+            value_rotation=value_rotation,
+            threshold=threshold,
+            center=center,
+            noise=noise,
+            weight=weight,
+            return_details=return_details,
+        )
+
+        if return_details:
+            arr_hat, info = out
+            ta_hat = TransientAbsorption(arr_hat, x=self.x, y=self.y, meta=self.meta)
+            ta_hat.meta["svd_denoise"] = info.get("wrapper", {})
+            ta_hat.meta["svd_info"] = info
+            return ta_hat, info
+
+        ta_hat = TransientAbsorption(out, x=self.x, y=self.y, meta=self.meta)
+        ta_hat.meta["svd_denoise"] = {"method": method, "value_rotation": value_rotation, "threshold": threshold}
+        return ta_hat
 
     def time_zero(
             self,
