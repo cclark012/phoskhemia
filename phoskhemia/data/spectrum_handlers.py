@@ -859,10 +859,17 @@ class TransientAbsorption(np.ndarray):
         from phoskhemia.preprocessing.downsampling import make_time_indices
         from phoskhemia.preprocessing.downsampling import downsample_time as _downsample_time
         indices = make_time_indices(self.y, method=method, **kwargs)
+        if method == "linear":
+            binsize: int = kwargs.get("stride")
+            scaling: float = 1 / np.sqrt(np.abs(binsize))
 
         if aggregate in ['mean', 'median', 'min', 'max']:
             from phoskhemia.preprocessing.downsampling import downsample_time_binned
-            return downsample_time_binned(self, indices, data_stat=aggregate)
+            array = downsample_time_binned(self, indices, data_stat=aggregate)
+            if aggregate == "mean" and array.meta.get("noise_t0", None) is not None:
+                array.meta["noise_t0"] *= scaling
+                
+            return array
 
         elif aggregate =='none':
             return _downsample_time(self, indices)
@@ -972,6 +979,7 @@ class TransientAbsorption(np.ndarray):
         time: float,
         *,
         method: Literal["nearest", "interp"] = "nearest",
+        aggregate: int = 0,
         return_index: bool = False,
     ) -> NDArray[np.floating] | tuple[NDArray[np.floating], int]:
         """
@@ -985,7 +993,13 @@ class TransientAbsorption(np.ndarray):
 
         if method == "nearest":
             i = _nearest_index(y, time)
-            out = data[i, :].copy()
+            if aggregate > 0:
+                dt = np.mean(np.diff(self.y))
+                j = _nearest_index(y, time + aggregate * dt)
+                out = np.mean(data[i:j+1, :].copy(), axis=0)
+            else:
+                out = data[i, :].copy()
+
             return (out, i) if return_index else out
 
         if method == "interp":
