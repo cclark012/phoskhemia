@@ -3,7 +3,7 @@ import numpy as np
 from numpy.typing import NDArray
 import matplotlib.pyplot as plt
 import scipy as sp
-# from phoskhemia.preprocessing.svd import *
+from phoskhemia.preprocessing.svd import svd_reconstruction
 
 from typing import Literal
 import numpy as np
@@ -275,34 +275,37 @@ def calculate_error_estimates(
     ) -> tuple[float, float, float]:
     """
     Construct estimates of error in data.
-    
-    ϵ' - Fit Measurement Error
-    ϵ" - Preliminary Estimate of Measurement Error
-    ϵ - True Error, generally ϵ > ϵ" and ϵ < ϵ'
-    ε̄ - Estimate of the true measurement error
-    T - Number of rows of matrix A
-    ᵴ - Noisy singular values
-    ŝ - "Unit" Marchenko-Pastur distribution
-    kₑ - Critical index of best fit
-    kₑ' - Critical index of estimate
-    (27) log₁₀(ϵ') = (1 / (T + 1 - k)) * Σₗ₌ₖᵀ (log₁₀(ᵴₗ) - log₁₀(ŝₗ))
-    (26) L = (1 / (T + 1 - k)) * Σₗ₌ₖᵀ (log₁₀(ϵ') + log₁₀(ŝₗ) - log₁₀(ᵴₗ))
-    (29) ϵ" = (ϵ'(kₑ) ∙ ŝ(kₑ)) / √D
-    (30) kₑ' = minₖ ᵴₖ < ϵ'√D
-    (31) ε̄ = min{ϵ', ϵ" + (ϵ' - ϵ") ∙ [(kₑ - kₑ') / (floor(0.8T) - kₑ')]}
-    
-    Following the procedures outlined in (1), log(noise) and MSE are constructed
-    using equations 27 and 26. The unit Marchenko-Pastur distribution is 
-    evaluated for each tail index. The best index (lowest MSE) is found and 
-    used to construct a preliminary estimate of the measurement error using
-    equation 29. Equation 30 is used to find the critical index for the 
-    fit measurement error ϵ'. Finally, the measurement error is estimated using 
-    equation 31.
 
-    (1) Epps, B. P.; Krivitzky, E. M. 
-        Singular Value Decomposition of Noisy Data: 
-        Noise Filtering. Exp Fluids 2019, 60 (8), 126. 
-        https://doi.org/10.1007/s00348-019-2768-4.
+    This implementation is based off of equations (26) - (31) in [1]_.
+    The log(noise) and MSE are constructed using equations 1 and 2. The 
+    unit Marchenko-Pastur distribution is evaluated for each tail index. 
+    The best index (lowest MSE) is found and used to construct a preliminary 
+    estimate of the measurement error using equation 3. Equation 4 is used 
+    to find the critical index for the noise floor. Finally, the measurement 
+    error is estimated using equation 5.
+
+    Definitions
+    ===========
+
+    Variables
+    ^^^^^^^^^
+        ϵ' - Fit Measurement Error
+        ϵ" - Preliminary Estimate of Measurement Error
+        ϵ - True Error, generally ϵ > ϵ" and ϵ < ϵ'
+        ε̄ - Estimate of the true measurement error
+        T - Number of rows of matrix A
+        ᵴ - Noisy singular values
+        ŝ - "Unit" Marchenko-Pastur distribution
+        kₑ - Critical index of best fit
+        kₑ' - Critical index of estimate
+
+    Equations
+    1. log₁₀(ϵ') = (1 / (T + 1 - k)) * Σₗ₌ₖᵀ (log₁₀(ᵴₗ) - log₁₀(ŝₗ))
+    2. L = (1 / (T + 1 - k)) * Σₗ₌ₖᵀ (log₁₀(ϵ') + log₁₀(ŝₗ) - log₁₀(ᵴₗ))
+    3. ϵ" = (ϵ'(kₑ) ∙ ŝ(kₑ)) / √D
+    4. kₑ' = minₖ ᵴₖ < ϵ'√D
+    5. ε̄ = min{ϵ', ϵ" + (ϵ' - ϵ") ∙ [(kₑ - kₑ') / (floor(0.8T) - kₑ')]}
+
 
     Parameters
     ----------
@@ -318,6 +321,13 @@ def calculate_error_estimates(
     tuple[ float, float, float ]
         Fit measurement error, preliminary estimate of measurement 
         error, and the estimate for the true measurement error.
+
+    References
+    ----------
+    .. [1] Epps, B. P.; Krivitzky, E. M. 
+        Singular Value Decomposition of Noisy Data: 
+        Noise Filtering. Exp Fluids 2019, 60 (8), 126. 
+        https://doi.org/10.1007/s00348-019-2768-4.
     """
 
     # Mean squared error and loss function for Marchenko-Pastur distribution of ϵ'*sₖ.
@@ -338,7 +348,7 @@ def calculate_error_estimates(
 
     # Index where singular values fall below noise threshold.
     other_best_index: int = (
-        np.min((svd_vals < error_prime * np.sqrt(n_cols)).nonzero())
+        np.argmax((svd_vals < error_prime * np.sqrt(n_cols)))
     )
 
     # Estimate measurement error from the weighted average of ϵ' and ϵ".
@@ -523,10 +533,10 @@ def calculate_minimum_loss_rank(
         raise ValueError("threshold must be between 0 and 1")
 
     t_k: NDArray[np.floating] = (
-        (np.log(vh_rmse) - np.log(np.sqrt(2 / shape[0]))) 
-        / (np.log(vh_rmse[0]) - np.log(np.sqrt(2 / shape[0])))
+        (np.log(vh_rmse) - np.log(np.sqrt(2 / shape[1]))) 
+        / (np.log(vh_rmse[1]) - np.log(np.sqrt(2 / shape[1])))
     )
-    r_min: int = np.argmax((t_k > threshold).nonzero()) + 1
+    r_min: int = np.max((t_k > threshold).nonzero()) + 1
 
     return r_min
 
@@ -739,34 +749,43 @@ def make_literature_figure(
         reconstruction_losses: tuple[NDArray[np.floating], ...]
     ) -> None:
 
+    # Left singular vectors, singular values, and right singular vectors.
     U: NDArray[np.floating]
     S: NDArray[np.floating]
     V: NDArray[np.floating]
     U, S, V = clean_data
     
+    # Number of rows and columns
     T: int
     D: int
+    # Standard deviation of normally distributed noise.
     error: float
     T, D, error = sim_vals
 
+    # Best fit error estimate, preliminary estimate of 
+    # measurement error, and estimate of true measurement error.
     error_prime: float
     error_doubleprime: float
     measurement_error: float
     error_prime, error_doubleprime, measurement_error = estim_errors
 
+    # Critical indices where RMSE(v) falls below 1 / √TD, 1 / (√D + √T), and 1 / √D
     kf: int
     k2: int
     ke: int
     kf, k2, ke = threshold_indices
 
+    # Estimate of clean and noisy singular values from E15 method.
     e15_clean_svd_vals: NDArray[np.floating]
     e15_noisy_svd_vals: NDArray[np.floating]
     e15_clean_svd_vals, e15_noisy_svd_vals = e15_svds
     
+    # Estimate of clean and noisy singular values from EK18 method.
     ek18_clean_svd_vals: NDArray[np.floating]
     ek18_noisy_svd_vals: NDArray[np.floating]
     ek18_clean_svd_vals, ek18_noisy_svd_vals = ek18_svds
 
+    # Various estimates of reconstruction loss.
     reconstruction_loss: NDArray[np.floating] 
     theoretical_best_loss: NDArray[np.floating] 
     approx_reconstruction_loss: NDArray[np.floating] 
@@ -862,15 +881,19 @@ def noise_filtering_figure():
         Noise Filtering. Exp Fluids 2019, 60 (8), 126. 
         https://doi.org/10.1007/s00348-019-2768-4.
     """
+
     calculation_time: int = time.perf_counter_ns()
+
     #1) Construction of test data.
     construction_time: int = time.perf_counter_ns()
+
     # Make array of values for testing.
     T: int = 40
     D: int = 100
     error: float = 1.e-3
     (U, S, V), clean, values = make_test_data(rows=T, cols=D, error=error)
 
+    # Noisy matrix decomposition
     # Decomposing matrix of 40x100 into U (40x40) with major columns, 
     # S (40x40) with singular values along main diagonal, and Vh (40x100) with major rows.
     # Matrix multiplication of U*S*Vh gives the reconstruction (40x100).
@@ -879,6 +902,7 @@ def noise_filtering_figure():
     vh: NDArray[np.floating]
     u, svd_vals, vh = sp.linalg.svd(values, lapack_driver='gesdd', full_matrices=False)
 
+    # Indices for singular values.
     x: NDArray[np.floating] = np.arange(1, len(svd_vals) + 1, 1)
     print(f"Time for Data Construction: {(time.perf_counter_ns() - construction_time) * 1.e-6 :.3f} ms")
 
@@ -1026,9 +1050,9 @@ def noise_filtering_figure():
         )
     print(f"Time to Make Figure: {(time.perf_counter_ns() - figure_time) * 1.e-6 :.3f} ms")
 
-    print(f"ϵ' = {error_prime / error :.2f}ϵ")
-    print(f"ϵ'' = {error_doubleprime / error :.2f}ϵ")
-    print(f"ϵ̄  = {measurement_error / error :.2f}ϵ")
+    print(f"ϵ' = {error_prime / error :.4f}ϵ")
+    print(f"ϵ'' = {error_doubleprime / error :.4f}ϵ")
+    print(f"ϵ̄  = {measurement_error / error :.4f}ϵ")
     print('kf, k2, and ke', kf, k2, ke)
 
 def e15_reconstruction(array: NDArray[np.floating]):
@@ -1134,5 +1158,62 @@ def e15_reconstruction(array: NDArray[np.floating]):
 
     return e15_reconstruction, measurement_error
 
-noise_filtering_figure()
-plt.show()
+if __name__ == "__main__":
+    # print(calculate_error_estimates.__doc__)
+    # noise_filtering_figure()
+    # plt.show()
+    T: int = 40
+    D: int = 100
+    error: float = 1.e-3
+    num_trials: int = 1000
+    e_primes = []
+    e_dprimes = []
+    m_errors = []
+    kfs = []
+    k2s = []
+    kes = []
+    fit_mins = []
+    est_mins = []
+    ranks = []
+    merits = []
+    losses = []
+    real_losses = []
+    start = time.perf_counter_ns()
+    for i in range(num_trials):
+        (U, S, V), clean, values = make_test_data(rows=T, cols=D, error=error)
+        array, info = svd_reconstruction(values, value_rotation='auto', return_details=True)
+        real_losses.append(np.sum(np.square(clean - array)))
+        e_primes.append(info["e_prime"])
+        e_dprimes.append(info["e_dprime"])
+        m_errors.append(info["error"])
+        kfs.append(info["kf"])
+        k2s.append(info["k2"])
+        kes.append(info["ke"])
+        fit_mins.append(info["fit_min"])
+        est_mins.append(info["est_min"])
+        ranks.append(info["r_min"])
+        merits.append(info["selection"]["best"]["merit"])
+        losses.append(info["selection"]["best"]["loss"])
+    
+    end = time.perf_counter_ns()
+    print(f"Average of {1e-6 * (end - start) / num_trials} ms per trial")
+    print("e_primes", f"{np.mean(e_primes) * 1000 :.4f}", f"{np.std(e_primes) * 1000 :.4f}")
+    print("e_dprimes", f"{np.mean(e_dprimes) * 1000 :.4f}", f"{np.std(e_dprimes) * 1000 :.4f}")
+    print("m_errors", f"{np.mean(m_errors) * 1000 :.4f}", f"{np.std(m_errors) * 1000 :.4f}")
+    print("kfs", f"{np.mean(kfs) :.4f}", f"{np.std(kfs) :.4f}")
+    print("k2s", f"{np.mean(k2s) :.4f}", f"{np.std(k2s) :.4f}")
+    print("kes", f"{np.mean(kes) :.4f}", f"{np.std(kes) :.4f}")
+    print("fit_mins", f"{np.mean(fit_mins) :.4f}", f"{np.std(fit_mins) :.4f}")
+    print("est_mins", f"{np.mean(est_mins) :.4f}", f"{np.std(est_mins) :.4f}")
+    print("ranks", f"{np.mean(ranks) :.4f}", f"{np.std(ranks) :.4f}")
+    print("merits", f"{np.mean(merits) * 100 :.4f}%", f"{np.std(merits) * 100 :.4f}%")
+    print("losses", f"{np.mean(losses) * 1000 :.4f}", f"{np.std(losses) * 1000 :.4f}")
+    print("real_losses", f"{np.mean(real_losses) * 1000 :.4f}", f"{np.std(real_losses) * 1000 :.4f}")
+    trials = np.arange(num_trials)
+    # plt.plot(trials, kfs)
+    # plt.plot(trials, k2s)
+    # plt.plot(trials, kes)
+    # plt.show()
+
+    # for k, v in info.items():
+    #     print(f"{k}: {v}")
