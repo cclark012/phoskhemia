@@ -319,6 +319,7 @@ def fit_global_kinetics(
     """
 
     # Input preparation and validation
+    meta: dict[str, Any] | None = getattr(data, "meta", None)
     data: NDArray[np.floating] = np.asarray(arr, dtype=float)
     times: NDArray[np.floating] = np.asarray(arr.y, dtype=float)
     wl: NDArray[np.floating] = np.asarray(arr.x, dtype=float)
@@ -333,7 +334,11 @@ def fit_global_kinetics(
 
     # Default to unity noise if none provided
     if noise is None:
-        noise: NDArray[np.floating] = np.ones(n_wl, dtype=float)
+        if meta is not None and meta.get("noise_t0", None) is not None:
+            noise: NDArray[np.floating] = meta["noise_t0"] 
+        else:
+            noise: NDArray[np.floating] = np.ones(n_wl, dtype=float)
+
     elif isinstance(noise, float | int):
         noise: NDArray[np.floating] = noise * np.ones(n_wl, dtype=float)
     else:
