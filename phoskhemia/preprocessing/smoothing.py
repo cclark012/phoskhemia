@@ -604,7 +604,7 @@ def conv_smooth(
         normalize: bool=True,
         separable_tol: float=1e-10,
         **kwargs,
-    ) -> NDArray[np.floating]:
+    ) -> tuple[NDArray[np.floating], float]:
     """
     Smooth data using scipy.signal.convolve.
 
@@ -707,7 +707,8 @@ def conv_smooth(
         else:
             out: NDArray[np.floating] = convolve(data, kernel, **kwargs)
 
-    return out
+    noise_scale: float = np.sqrt(np.sum(kernel)) / np.sum(kernel)
+    return out, noise_scale
 
 if __name__ == "__main__":
     array = np.ones((13, 13))
