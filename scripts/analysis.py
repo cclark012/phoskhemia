@@ -382,7 +382,7 @@ def analysis2():
     ta_file13 = "C:/Users/colec/Documents/.Most_Used/Lab_Work/2026/TAsNH/8CPP/05212025_PtOEPw8CPP_532ex_200Hz_100shot_10scan_262144ns_8bit_400-520nm_0-3.mat"
 
     start_load = perf_counter_ns()
-    plt.style.use('./campos_research_paper.mplstyle')
+    plt.style.use('./research_style.mplstyle')
 
     array1 = load_mat(ta_file2, gui=True)
     array2 = load_mat(ta_file3, gui=True)
@@ -393,9 +393,9 @@ def analysis2():
     start_smooth = perf_counter_ns()
 
     arr = array.time_zero()
-    arr, info = arr.svd_denoise(method='e15', noise=None, weight='column', value_rotation='include', return_details=True)
-    print(info["r_min"])
-    # arr = arr.downsample_time(method='linear', stride=32, aggregate='mean')
+    # arr, info = arr.svd_denoise(method='e15', noise=None, weight='column', value_rotation='include', return_details=True)
+    # print(info["r_min"])
+    arr = arr.downsample_time(method='linear', stride=32, aggregate='mean')
 
     end_smooth = perf_counter_ns()
     print(f"Data smooth time: {(end_smooth - start_smooth) / 1e9} s")
@@ -415,8 +415,8 @@ def analysis2():
     cmap = mpl.colormaps['bwr_r']
     colors = cmap(np.linspace(0, 1.0, 4))
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.plot(arr.y, arr.trace(440), color=colors[0], lw=1.5, alpha=0.5, label="440 nm")
+    # fig, ax = plt.subplots(figsize=(8, 6))
+    # ax.plot(arr.y, arr.trace(440), color=colors[0], lw=1.5, alpha=0.5, label="440 nm")
     # ax.plot(arr.y, arr.trace(480), color=colors[1], lw=1.5, alpha=0.75, label="480 nm")
     # ax.plot(arr.y, arr.trace(600), color=colors[2], lw=1.5, alpha=0.75, label="600 nm")
     # ax.plot(arr.y, arr.trace(760), color=colors[3], lw=1.5, alpha=0.5, label="760 nm")
@@ -430,7 +430,7 @@ def analysis2():
     # plt.plot(fit.y, fit.trace(760), color='k', lw=.5)
     # plt.show()
     # [plt.plot(arr.x, result.amplitudes[:, i]) for i in range(result.amplitudes.shape[1])]
-    plt.show()
+    # plt.show()
 
     fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -454,7 +454,7 @@ def analysis2():
     ax.annotate(r"$Ex = 532 nm$", 
         xy=(532, 0),
         xycoords='data', 
-        xytext=(2., -6), 
+        xytext=(0., -4), 
         textcoords='offset fontsize', 
         verticalalignment='top', 
         horizontalalignment='center', 
