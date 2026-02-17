@@ -3,7 +3,7 @@ import numpy as np
 from numpy.typing import NDArray
 import matplotlib.pyplot as plt
 import scipy as sp
-from phoskhemia.preprocessing.svd import svd_reconstruction
+from phoskhemia.preprocessing.svd_ek import svd_reconstruction
 
 from typing import Literal
 import numpy as np
