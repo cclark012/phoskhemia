@@ -394,7 +394,8 @@ def marchenko_pastur_cdf(
     return cdf
 
 
-
+# TODO - Rigorously test everything. ek18 has sometimes failed. Possibly refactor
+# TODO - as the function is still quite long.
 def svd_reconstruction(
         arr: NDArray[np.floating],
         method: Literal['e15', 'ek18'] = 'e15',
