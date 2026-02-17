@@ -74,7 +74,7 @@ def make_time_indices(
         indices = time_indices_hybrid(t, **kwargs)
 
     elif method == 'linear':
-        raise NotImplementedError
+        indices = time_indices_uniform(len(t), **kwargs)
 
     else:
         raise ValueError("method must be one of 'log', 'hybrid', or 'linear'")
