@@ -1,0 +1,81 @@
+# Style sheet for figures and images used in presentations and other large formats.
+
+# Font
+font.family: sans-serif
+font.sans-serif: Avenir, sans-serif
+font.stretch: normal
+font.weight: normal
+font.size: 14
+
+# Mathtext
+text.usetex: False
+mathtext.fontset: custom
+mathtext.bf:  Avenir:book
+mathtext.bfit: Avenir:italic:bold
+mathtext.cal: cursive
+mathtext.it:  Avenir:italic
+mathtext.rm:  Avenir:light
+mathtext.sf:  Avenir:light
+mathtext.tt:  monospace
+mathtext.fallback: cm
+mathtext.default: rm
+
+# Contour plots
+contour.negative_linestyle: solid
+contour.algorithm: threaded
+
+# General line parameters
+lines.linewidth: 2
+
+# Axis styling
+axes.unicode_minus: True
+axes.xmargin: 0.01
+axes.ymargin: 0.025
+axes.zmargin: 0.05
+axes.linewidth: 2
+axes.labelpad: 10
+axes.titlepad: 10
+axes.titlesize: 16
+axes.titleweight: bold
+axes.labelweight: bold
+axes.labelsize: 14
+axes.prop_cycle: cycler('color', ['tab:red', 'tab:orange', 'xkcd:goldenrod', 'tab:green', 'tab:cyan', 'tab:blue', 'tab:purple', 'tab:pink', 'tab:gray'])
+
+# Plot legend
+legend.frameon: False
+legend.title_fontsize: 16
+legend.fontsize: 14
+
+# x and y ticks
+xtick.labelsize: 12
+xtick.major.size: 6
+xtick.major.width: 2
+xtick.minor.size: 4
+xtick.minor.width: 1
+xtick.minor.visible: True
+
+ytick.labelsize: 12
+ytick.major.size: 6
+ytick.major.width: 2
+ytick.minor.size: 4
+ytick.minor.width: 1
+ytick.minor.visible: True
+
+# Saving
+savefig.dpi: 1200
+savefig.format: png
+savefig.bbox: tight
+
+# General figure
+figure.figsize: 6.5, 3.0
+figure.titlesize: 18
+figure.titleweight: bold
+figure.labelweight: bold
+figure.subplot.wspace: 0.10
+figure.subplot.hspace: 0.10
+figure.subplot.left: 0.125
+figure.subplot.right: 0.95
+figure.subplot.bottom: 0.20
+figure.subplot.top: 0.95
+figure.dpi: 100
+
