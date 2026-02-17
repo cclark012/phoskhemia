@@ -319,7 +319,7 @@ def fit_global_kinetics(
     """
 
     # Input preparation and validation
-    meta: dict[str, Any] | None = getattr(data, "meta", None)
+    meta: dict[str, Any] | None = getattr(arr, "meta", None)
     data: NDArray[np.floating] = np.asarray(arr, dtype=float)
     times: NDArray[np.floating] = np.asarray(arr.y, dtype=float)
     wl: NDArray[np.floating] = np.asarray(arr.x, dtype=float)
@@ -378,7 +378,9 @@ def fit_global_kinetics(
     # Run ODR
     odr_data: odr.RealData = odr.RealData(t_flat, y_obs)
     odr_mod: odr.Model = odr.Model(odr_model)
-    odr_out: odr.Output = odr.ODR(odr_data, odr_mod, beta0=beta0).run()
+    odr_func: odr.Output = odr.ODR(odr_data, odr_mod, beta0=beta0)
+    odr_func.set_job(deriv=1)
+    odr_out = odr_func.run()
 
     result: GlobalFitResult = package_result(
         odr_out=odr_out,
