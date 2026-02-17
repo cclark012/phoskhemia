@@ -140,12 +140,135 @@ References
 [1] Epps, B.P.; Krivitzky, E.M. Mode Corruption. Exp Fluids 2019.
 [2] Epps, B.P.; Krivitzky, E.M. Noise Filtering. Exp Fluids 2019.
 """
+from __future__ import annotations
 
-from typing import Literal, Any
+from typing import Literal, Any, TypedDict, Sequence, NotRequired
 import numpy as np
 from numpy.typing import NDArray
 from scipy.interpolate import PchipInterpolator
 from scipy.linalg import svd
+
+class Candidate(TypedDict):
+    name: Literal['include', 'exclude']
+    r: int
+    loss: float
+    merit: float
+    use_rotation: bool
+
+class Selection(TypedDict):
+    value_rotation: Literal["exclude", "include", "auto"]
+    best: Candidate
+    candidates: list[Candidate]
+
+class SVDReconstructionInfo(TypedDict):
+    method: Literal["e15", "ek18"]
+    value_rotation: Literal["exclude", "include", "auto"]
+    shape: tuple[int, int]
+    transposed: bool
+
+    e_prime: float
+    e_dprime: float
+    error: float
+
+    r_min: int
+    selection: Selection
+
+    resid_std: NotRequired[float]
+    fit_min: NotRequired[int]
+    est_min: NotRequired[int]
+
+def _build_candidates(
+        *,
+        approx_loss_ex: NDArray[np.floating],
+        approx_loss_in: NDArray[np.floating] | None,
+        r_min: int,
+        denom: float,
+    ) -> list[Candidate]:
+    """
+    Build reconstruction candidates (exclude/include × {argmin(loss), r_min}).
+
+    approx_loss_* are length-K arrays indexed by r-1 (0-based).
+    r_min is a rank in [1, K].
+    denom is (m_error^2)*T*D (or other positive normalizer) used for merit.
+    """
+
+    K: int = int(approx_loss_ex.size)
+    if K <= 0:
+        raise ValueError("loss curve must be non-empty")
+    if approx_loss_in is not None and int(approx_loss_in.size) != K:
+        raise ValueError("approx_loss_in must have the same length as approx_loss_ex")
+
+    def clamp_rank(r: int) -> int:
+        return int(np.clip(int(r), 1, K))
+
+    def merit_from_loss(loss: float) -> float:
+        if denom <= 0.0 or not np.isfinite(denom):
+            return float("nan")
+        return float((denom - loss) / denom)
+
+    def make(
+            name: Literal["exclude", "include"], 
+            r: int, 
+            loss_curve: NDArray[np.floating], 
+            use_rotation: bool
+        ) -> Candidate:
+
+        r: int = clamp_rank(r)
+        loss: float = float(loss_curve[r - 1])
+        return {
+            "name": name,
+            "r": r,
+            "loss": loss,
+            "merit": merit_from_loss(loss),
+            "use_rotation": use_rotation,
+        }
+
+    cands: list[Candidate] = []
+
+    # exclude
+    r_loss_ex: int = int(np.argmin(approx_loss_ex)) + 1
+    cands.append(make("exclude", r_loss_ex, approx_loss_ex, use_rotation=False))
+    cands.append(make("exclude", r_min, approx_loss_ex, use_rotation=False))
+
+    # include (optional)
+    if approx_loss_in is not None:
+        r_loss_in = int(np.argmin(approx_loss_in)) + 1
+        cands.append(make("include", r_loss_in, approx_loss_in, use_rotation=True))
+        cands.append(make("include", r_min, approx_loss_in, use_rotation=True))
+
+    return cands
+
+def _select_candidate(
+        *,
+        candidates: Sequence[Candidate],
+        value_rotation: Literal["exclude", "include", "auto"],
+        key: Literal["merit", "loss"] = "merit",
+    ) -> Candidate:
+    """
+    Select the best candidate.
+
+    key="merit": maximize merit (preferred).
+    key="loss": minimize loss.
+    """
+
+    if not candidates:
+        raise ValueError("candidates must be non-empty")
+
+    if value_rotation != "auto":
+        candidates = [c for c in candidates if c["name"] == value_rotation]
+        if not candidates:
+            raise ValueError(f"no candidates available for value_rotation={value_rotation!r}")
+
+    if key == "loss":
+        return min(candidates, key=lambda c: c["loss"])
+
+    # key == "merit"
+    finite: list[Candidate] = [c for c in candidates if np.isfinite(c["merit"])]
+    if finite:
+        return max(finite, key=lambda c: c["merit"])
+
+    # fallback if denom invalid: minimize loss
+    return min(candidates, key=lambda c: c["loss"])
 
 def marchenko_pastur_pdf(
         x: NDArray[np.floating], 
@@ -323,8 +446,8 @@ def svd_reconstruction(
         https://doi.org/10.1007/s00348-019-2768-4.
     """
 
-    arr: NDArray[np.floating] = np.asarray(arr, dtype=float)
-    if arr.ndim != 2:
+    arr0: NDArray[np.floating] = np.asarray(arr, dtype=float)
+    if arr0.ndim != 2:
         raise ValueError("arr must be two-dimensional")
 
     if method not in ['e15', 'ek18']:
@@ -336,7 +459,7 @@ def svd_reconstruction(
     if not (0 <= threshold <= 1):
         raise ValueError("threshold must be between 0 and 1")
 
-    shape: tuple[int, int] = arr.shape
+    shape: tuple[int, int] = arr0.shape
     T: int # rows
     D: int # cols
     T, D = shape
@@ -344,8 +467,10 @@ def svd_reconstruction(
     transposed: bool = False
     if T > D:
         transposed = True
-        arr = arr.T
+        arr = arr0.T
         T, D = D, T
+    else:
+        arr = arr0
 
     U: NDArray[np.floating] # MxK
     S: NDArray[np.floating] # (K,)
@@ -472,86 +597,122 @@ def svd_reconstruction(
         clean_s: NDArray[np.floating] = np.zeros_like(S, dtype=float)
         clean_s[:c_index] = 0.5 * (S[:c_index] + (np.sqrt(np.square(S[:c_index]) - 2 * np.square(m_error) * D)))
 
-    if value_rotation in ['include', 'auto']:
+
+    denom = float((m_error ** 2) * T * D)  # used for merit; if <=0 => merit becomes NaN
+
+    cl_est: NDArray[np.floating] | None = None
+    approx_loss_in: NDArray[np.floating] | None = None
+    if value_rotation in ("include", "auto"):
         # Construct an estimate of the canonical angle product.
-        cos_phi_k: NDArray[np.floating] = 1 - T * np.square(u_rmse)
-        cos_theta_k: NDArray[np.floating] = 1 - D * np.square(v_rmse)
-        cl_est: NDArray[np.floating] = cos_phi_k * cos_theta_k
-        cl_est[r_min:] = 0
+        cos_phi_k: NDArray[np.floating] = 1.0 - T * np.square(u_rmse)
+        cos_theta_k: NDArray[np.floating] = 1.0 - D * np.square(v_rmse)
+        cl_est = cos_phi_k * cos_theta_k
 
-        # Calculate approximate loss function, minimum, and merit of reconstruction.
-        approx_loss_cl: NDArray[np.floating] = np.array([(m_error ** 2) * D * i + np.sum(np.square(clean_s[i:] * cl_est[i:])) for i in np.arange(K)])
-        merit_cl: float = ((m_error ** 2) * T * D - approx_loss_cl[r_min]) / ((m_error ** 2) * T * D)
-        if value_rotation == 'include':
-            loss: float = approx_loss_cl[r_min]
-            r_loss: int = r_min
-            merit: float = merit_cl
-            reconstruction: NDArray[np.floating] = U[:, :r_min] @ np.diag((clean_s[:r_min] * cl_est[:r_min])) @ V[:r_min, :]
+        cl_est = np.clip(cl_est, 0.0, 1.0)
 
-    if value_rotation in ['exclude', 'auto']:
-        # Calculate approximate loss function, minimum, and merit of reconstruction.
-        approx_loss: NDArray[np.floating] = np.array([(m_error ** 2) * D * i + np.sum(np.square(clean_s[i:])) for i in np.arange(K)])
-        merit: float = ((m_error ** 2) * T * D - approx_loss[r_min]) / ((m_error ** 2) * T * D)
-        if value_rotation == 'exclude':
-            r_loss: int = r_min
-            loss: float = approx_loss[r_min]
-            reconstruction: NDArray[np.floating] = U[:, :r_min] @ np.diag(clean_s[:r_min]) @ V[:r_min, :]
+        if 1 <= r_min < K:
+            cl_est[r_min:] = 0.0
 
-    if value_rotation == 'auto':
-        loss_cl_rmin: float = (m_error ** 2) * D * r_min + np.sum(np.square(clean_s[r_min:] * cl_est[r_min:]))
-        loss_rmin: float = (m_error ** 2) * D * r_min + np.sum(np.square(clean_s[r_min:]))
-        merit_cl_rmin: float = ((m_error ** 2) * T * D - loss_cl_rmin) / ((m_error ** 2) * T * D)
-        merit_rmin: float = ((m_error ** 2) * T * D - loss_rmin) / ((m_error ** 2) * T * D)
-        r_loss: int = np.argmin(approx_loss)
-        r_loss_cl: int = np.argmin(approx_loss_cl)
+    clean_s2: NDArray[np.floating] = np.square(clean_s)
 
-        # 'Best' is chosen to be the method that has the highest figure of merit.
-        best: int = np.argmax([merit, merit_rmin, merit_cl, merit_cl_rmin])
-        r_loss: int = [r_loss, r_min, r_loss_cl, r_min][best]
-        merit: float = [merit, merit_rmin, merit_cl, merit_cl_rmin][best]
-        loss: float = [approx_loss[r_loss], loss_rmin, approx_loss_cl[r_loss_cl], loss_cl_rmin][best]
-        reconstruction: NDArray[np.floating] = (
-            U[:, :r_loss] @ np.diag(clean_s[:r_loss]) @ V[:r_loss, :] 
-            if best < 2 else U[:, :r_loss] @ np.diag((clean_s[:r_loss] * cl_est[:r_loss])) @ V[:r_loss, :]
-        )
+    # Tail sums: tail_sum2[r] = sum_{i=r}^{Kdim-1} clean_s[i]^2
+    tail_sum2: NDArray[np.floating] = np.cumsum(clean_s2[::-1])[::-1]
 
-    if transposed:
-        arr = arr.T
-        reconstruction = reconstruction.T
+    tail_after_rank: NDArray[np.floating] = np.empty(K + 1, dtype=float)
+    tail_after_rank[:K] = tail_sum2
+    tail_after_rank[K] = 0.0
 
+    r_grid: NDArray[np.int64] = np.arange(1, K + 1, dtype=int)
+    approx_loss_ex: NDArray[np.floating] = (m_error ** 2) * D * r_grid + tail_after_rank[r_grid]
+
+    if cl_est is not None:
+        # Rotated tail energy uses (clean_s * cl_est)^2
+        clean_rot2: NDArray[np.floating] = np.square(clean_s * cl_est)
+        tail_rot2: NDArray[np.floating] = np.cumsum(clean_rot2[::-1])[::-1]
+        tail_after_rank_rot: NDArray[np.floating] = np.empty(K + 1, dtype=float)
+        tail_after_rank_rot[:K] = tail_rot2
+        tail_after_rank_rot[K] = 0.0
+        approx_loss_in: NDArray[np.floating] = (m_error ** 2) * D * r_grid + tail_after_rank_rot[r_grid]
+
+    # Candidate build and selection 
+    candidates: list[Candidate] = _build_candidates(
+        approx_loss_ex=approx_loss_ex,
+        approx_loss_in=approx_loss_in,
+        r_min=r_min,
+        denom=denom,
+    )
+    best: Candidate = _select_candidate(
+        candidates=candidates,
+        value_rotation=value_rotation,
+        key="merit",  # or "loss"
+    )
+
+    # Reconstruction from best candidate 
+    r_best: int = int(best["r"])
+    use_rotation = bool(best["use_rotation"])
+
+    if use_rotation:
+        if cl_est is None:
+            raise RuntimeError("internal error: selected include candidate without cl_est")
+        s_eff: NDArray[np.floating] = clean_s[:r_best] * cl_est[:r_best]
+    else:
+        s_eff: NDArray[np.floating] = clean_s[:r_best]
+
+    # U[:, :r] @ diag(s_eff) @ V[:r, :] without forming diag
+    reconstruction_work: NDArray[np.floating] = U[:, :r_best] @ (s_eff[:, None] * V[:r_best, :])
+
+    # Restore original orientation
+    reconstruction: NDArray[np.floating] = reconstruction_work.T if transposed else reconstruction_work
+
+    # Optional details
     if return_details:
-        resid_std: float = np.std((arr - reconstruction))
-        # First mode that fails the test of ᵴₖ > ε̄√DT.
-        kf: int = np.argmax((S < m_error * np.sqrt(D * T)))
-        # Rough estimate of minimum-loss reconstruction rank.
-        k2: int = np.argmax((S < m_error * (np.sqrt(D) + np.sqrt(T))))
-        # Minimum index for where singular values and Marchenko-Pastur overlay one another.
-        ke: int = np.argmax((S < m_error * np.sqrt(D)))
+        # Residual stats against the original (non-transposed) input array
+        resid: NDArray[np.floating] = arr0 - reconstruction
+        resid_std: float = float(np.std(resid, ddof=1))
 
-        info: dict[str, Any] = {
-            "e_prime": e_prime,
-            "e_dprime": e_dprime,
-            "error": m_error,
-            "rank": r_loss,
-            "merit": merit,
-            "loss": loss,
-            "threshold": threshold,
+        # “First index” style diagnostics should be guarded.
+        def _first_true_or_default(cond: NDArray[np.bool_], default: int) -> int:
+            return int(np.argmax(cond)) if bool(np.any(cond)) else int(default)
+
+        kf: int = _first_true_or_default(S < (m_error * np.sqrt(D * T)), default=K)   # “fails ε̄√(DT)”
+        k2: int = _first_true_or_default(S < (m_error * (np.sqrt(D) + np.sqrt(T))), default=K)
+        ke: int = _first_true_or_default(S < (m_error * np.sqrt(D)), default=K)
+
+        # Selection payload (TypedDict)
+        selection: Selection = {
+            "value_rotation": value_rotation,
+            "best": best,
+            "candidates": list(candidates),
+        }
+
+        info: SVDReconstructionInfo = {
+            "method": method,
+            "value_rotation": value_rotation,
             "shape": shape,
             "transposed": transposed,
-            "c_index": c_index,
-            "method": method,
+
+            "e_prime": float(e_prime),
+            "e_dprime": float(e_dprime),
+            "error": float(m_error),
+
+            "r_min": int(r_min),
+            "selection": selection,
+
+            # Optional / useful extras:
             "resid_std": resid_std,
-            "kf": kf,
-            "k2": k2,
-            "ke": ke,
-            "fit_min": fit_min,
-            "est_min": est_min,
-            "value_rotation": value_rotation
+            "fit_min": int(fit_min),
+            "est_min": int(est_min),
+            "c_index": int(c_index),
+            "threshold": float(threshold),
+
+            "kf": int(kf),
+            "k2": int(k2),
+            "ke": int(ke),
         }
+
         return reconstruction, info
 
-    else:
-        return reconstruction
+    return reconstruction
 
 if __name__ == "__main__":
     m_error = 1.e-3
