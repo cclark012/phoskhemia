@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib.axes import Axes
 from matplotlib.contour import QuadContourSet
+from matplotlib.collections import QuadMesh
 from matplotlib.figure import Figure
 from matplotlib.colors import Colormap
 from matplotlib import rcParams, ticker
@@ -17,20 +18,33 @@ from phoskhemia.fitting.reconstructions import reconstruct_fit
 def _decimate_time(
         arr: NDArray[np.floating], 
         times: NDArray[np.floating], 
-        max_points: int
+        max_points: int,
+        time_scale: Literal['log', 'linear', 'symlog'] = 'log'
     ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
 
-    # TODO - Add downsampling based on time_scale argument.
     n_t: int
     n_w: int
     n_t, n_w = arr.shape
     if arr.size <= max_points:
         return arr, times
 
-    n_t_keep: int = int(max(2, int(max_points // n_w)))
-    idx: NDArray[np.int64] = np.linspace(0, n_t - 1, n_t_keep, dtype=np.int64)
-    idx = np.unique(idx)
+    n_t_keep: int = int(np.max((2, int(max_points // n_w))))
+    n_t_keep = int(np.min((n_t_keep, n_t)))
+    if time_scale == 'linear':
+        idx: NDArray[np.int64] = np.linspace(0, n_t - 1, n_t_keep, dtype=np.int64)
 
+    else:
+        times = np.asarray(times, dtype=float)
+        if np.any(times <= 0):
+            idx: NDArray[np.int64] = np.linspace(0, n_t - 1, n_t_keep, dtype=np.int64)
+
+        else:
+            logt = np.log10(times)
+            linspace = np.linspace(logt.min(), logt.max(), n_t_keep)
+            idx = np.searchsorted(logt, linspace)
+            idx = np.clip(idx, 0, n_t - 1).astype(np.int64)
+
+    idx = np.unique(idx)
     return arr[idx, :], times[idx]
 
 def _edges(x: NDArray[np.floating]) -> NDArray[np.floating]:
@@ -58,7 +72,7 @@ def plot_ta(
     fast: bool = True,
     return_mappable: bool = False,
     **kwargs: Any
-    ) -> Axes | tuple[Axes, QuadContourSet]:
+    ) -> Axes | tuple[Axes, QuadContourSet | QuadMesh]:
 
     if ax is None:
         _, ax = plt.subplots()
@@ -69,7 +83,7 @@ def plot_ta(
     arr: NDArray[np.floating] = np.asarray(ta)
     times: NDArray[np.floating] = np.asarray(ta.y).reshape(-1)
     waves: NDArray[np.floating] = np.asarray(ta.x).reshape(-1)
-    arr, times = _decimate_time(arr=arr, times=times, max_points=max_points)
+    arr, times = _decimate_time(arr=arr, times=times, max_points=max_points, time_scale=time_scale)
     
     if np.any(times <= 0) and time_scale == 'log':
         raise ValueError("time_scale='log' requires all times > 0. Use 'symlog' or truncate/shift time.")
@@ -77,18 +91,19 @@ def plot_ta(
     if fast:
         X = _edges(waves)
         Y = _edges(times)
-        plot: Axes = ax.pcolormesh(X, Y, arr, shading='auto', cmap=cmap, vmin=vmin, vmax=vmax, **kwargs)
+        plot: QuadMesh = ax.pcolormesh(X, Y, arr, shading='auto', cmap=cmap, vmin=vmin, vmax=vmax, **kwargs)
 
     else:
         plot: QuadContourSet = ax.contourf(waves, times, arr, cmap=cmap, vmin=vmin, vmax=vmax, **kwargs)
 
     if time_scale == "log":
         ax.set_yscale('log')
-        ax.set_ylim((np.min(np.abs(times[times > 0])), np.max(times)))
+        ax.set_ylim((float(np.min(times[times > 0])), float(np.max(times))))
         # ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda y, _: '{:g}'.format(10 ** y)))
 
     elif time_scale == "symlog":
-        ax.set_yscale('symlog')
+        linthresh = np.max((1e-6, float(np.max(np.abs(times))) * 1e-3))
+        ax.set_yscale('symlog', linthresh=linthresh)
     
     elif time_scale != 'linear':
         raise ValueError("time_scale must be 'log', 'symlog', or 'linear'")
@@ -112,7 +127,7 @@ def plot_residuals(
         fast: bool = True,
         return_mappable: bool = False,
         **kwargs
-    ) -> Axes | tuple[Axes, QuadContourSet]:
+    ) -> Axes | tuple[Axes, QuadContourSet | QuadMesh]:
 
     if isinstance(result, GlobalFitResult):
         fit: NDArray[np.floating] = np.asarray(reconstruct_fit(result), dtype=float)
@@ -157,19 +172,21 @@ def plot_fit(
         fast: bool = True,
         return_mappable: bool = False,
         **kwargs
-    ) -> Axes | tuple[Axes, QuadContourSet]:
+    ) -> Axes | tuple[Axes, QuadContourSet | QuadMesh]:
 
     if isinstance(result, GlobalFitResult):
         fit: NDArray[np.floating] = np.asarray(reconstruct_fit(result), dtype=float)
+        fitting = TransientAbsorption(fit, result.wavelengths, result.times)
 
     elif isinstance(result, TransientAbsorption):
         fit: NDArray[np.floating] = np.asarray(result, dtype=float)
+        fitting = TransientAbsorption(fit, result.x, result.y)
 
     else:
         raise ValueError("result must a GlobalFitResult or TransientAbsorption instance")
 
     return plot_ta(
-            fit, 
+            fitting, 
             ax=ax, 
             time_scale=time_scale, 
             vmin=vmin, 
@@ -222,6 +239,7 @@ def plot_spectrum(
     return ax
 
 if __name__ == "__main__":
+    np.show_runtime()
     rng = np.random.default_rng()
     array = rng.normal(0, 1, (123456, 100))
     times = np.arange(1, array.shape[0]+1)
@@ -229,5 +247,5 @@ if __name__ == "__main__":
     array2 = rng.normal(0, 1, (123456, 100))
     arr = TransientAbsorption(array, waves, times)
     fit = TransientAbsorption(array2, waves, times)
-    plot = plot_ta(arr)
+    plot = plot_fit(arr)
     plt.show()
