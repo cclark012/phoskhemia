@@ -1,20 +1,23 @@
 from __future__ import annotations
 from typing import Any, Literal
 import numpy as np
+from numpy.typing import NDArray
 import scipy as sp
 from scipy import sparse
+from scipy.sparse import diags_array, csr_array
 from scipy.sparse.linalg import spsolve
-from scipy.linalg import cholesky
+# from scipy.linalg import cholesky
+from scipy.special import expit
 from numpy.typing import NDArray
 from phoskhemia.utils.typing import ArrayFloatAny
 from phoskhemia.data.spectrum_handlers import TransientAbsorption
 
 def arpls(
-        array: ArrayFloatAny, 
+        array: NDArray[np.floating], 
         lam: float | int=1e4, 
         ratio: float=0.05, 
         itermax: int=100
-    ) -> ArrayFloatAny:
+    ) -> NDArray[np.floating]:
     """
     Baseline correction using asymmetrically
     reweighted penalized least squares smoothing
@@ -77,41 +80,45 @@ def arpls(
     n_elements: int = len(array)
 
     # Second-order difference matrix.
-    diff2nd: ArrayFloatAny = sparse.eye(n_elements, format='csc')
+    diff2nd: NDArray[np.floating] = sparse.eye(n_elements, format='csc')
     diff2nd = diff2nd[1:] - diff2nd[:-1]
     diff2nd = diff2nd[1:] - diff2nd[:-1]
 
     # Symmetric pentadiagonal matrix.
-    balanced_pentadiagonal: ArrayFloatAny = lam * diff2nd.T * diff2nd
-    weights: ArrayFloatAny = np.ones(n_elements)
+    balanced_pentadiagonal: NDArray[np.floating] = lam * diff2nd.T * diff2nd
+    weights: NDArray[np.floating] = np.ones(n_elements)
 
     # Perform itermax number of iterations at most.
     for i in range(itermax):
-        weights_diag: ArrayFloatAny = (
-            sparse.diags(weights, 0, shape=(n_elements, n_elements))
+        weights_diag: NDArray[np.floating] = (
+            diags_array(weights, offsets=0, shape=(n_elements, n_elements))
         )
 
         # Symmetric band-diagonal matrix that allows for more efficient algorithms.
-        sym_band_diag: ArrayFloatAny = (
-            sparse.csc_matrix(weights_diag + balanced_pentadiagonal)
+        sym_band_diag: NDArray[np.floating] = (
+            csr_array(weights_diag + balanced_pentadiagonal)
         )
 
-        # Cholesky decomposition.
-        chol: ArrayFloatAny = (
-            sparse.csc_matrix(cholesky(sym_band_diag.todense()))
+        # Solve the sparse system for the smooth background vector.
+        background: NDArray[np.floating] = (
+            spsolve(sym_band_diag, weights * array, permc_spec="NATURAL")
         )
 
-        background: ArrayFloatAny = (
-            spsolve(chol, spsolve(chol.T, weights * array))
-        )
+        # If spsolve is ever found to be unstable, use Cholesky decomposition.
+        # chol: NDArray[np.floating] = (
+            # csc_array(cholesky(sym_band_diag.todense(), check_finite=False))
+        # )
+        # background: NDArray[np.floating] = (
+            # spsolve(chol, spsolve(chol.T, weights * array))
+        # )
 
         # Find d- and the mean and standard deviation for weighting.
-        diff: ArrayFloatAny = array - background
-        diff_negative: ArrayFloatAny = diff[diff < 0]
+        diff: NDArray[np.floating] = array - background
+        diff_negative: NDArray[np.floating] = diff[diff < 0]
         mean: float = np.mean(diff_negative)
         sigma: float = np.std(diff_negative)
-        new_weights: ArrayFloatAny = (
-            1. / (1 + np.exp(2 * (diff - (2 * sigma - mean)) / sigma))
+        new_weights: NDArray[np.floating] = (
+            expit(-(2 * (diff - (2 * sigma - mean)) / sigma))
         )
 
         # Check exit condition.
@@ -120,6 +127,9 @@ def arpls(
 
         # Set weights and loop again.
         weights = new_weights
+
+    else:
+        print(f"Warning: reached itermax = {itermax} before converging")
 
     # Return fitted background vector.
     return background
@@ -432,4 +442,3 @@ def apply_time_zero(
 
     else:
         raise ValueError("mode must be 'truncate', 'shift', or 'truncate_shift'")
-
