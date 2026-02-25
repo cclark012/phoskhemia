@@ -6,7 +6,13 @@ import warnings
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy import odr
+from phoskhemia.fitting.solvers import (
+    SolverResult,
+    ODRPackSolver,
+    Solver,
+    weights_from_sigma,
+    time_sigma_from_scope,
+)
 
 from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.fitting.projections import project_amplitudes, propagate_kinetic_covariance
@@ -150,7 +156,7 @@ def sd_lognormal(beta, sd_beta):
     return sd_p
 
 def package_result(
-        odr_out: odr.Output,
+        sol: SolverResult,
         kinetic_model: KineticModel,
         times: NDArray[np.floating],
         wl: NDArray[np.floating],
@@ -167,7 +173,7 @@ def package_result(
     n_times = len(times)
     
     # Post-fit reconstruction
-    beta: NDArray[np.floating] = odr_out.beta
+    beta: NDArray[np.floating] = np.asarray(sol.beta, dtype=float)
     traces: NDArray[np.floating] = kinetic_model.solve(times, beta)
     n_species: int = traces.shape[1]
 
@@ -175,8 +181,8 @@ def package_result(
     amp_errors: NDArray[np.floating] = np.empty_like(amplitudes)
     # Scale covariance based on residual variance
     cov_beta = None
-    if odr_out.cov_beta is not None:
-        cov_beta: NDArray[np.floating] = odr_out.cov_beta * odr_out.res_var
+    if sol.cov_beta is not None:
+        cov_beta: NDArray[np.floating] = np.asarray(sol.cov_beta, dtype=float)
 
     # Calculate amplitudes and errors
     for i in range(n_wl):
@@ -212,7 +218,7 @@ def package_result(
     ci_sigma, ci_level = normalize_ci(ci_sigma, ci_level)
 
     params, ci_low, ci_high = transform_params_and_cis(
-        beta=odr_out.beta,
+        beta=beta,
         cov_beta=cov_beta,
         parameterization=param_type,
         ci_sigma=ci_sigma,
@@ -257,6 +263,8 @@ def package_result(
             )
         }
 
+    backend = {str(sol.info.get("backend", "unknown")): sol.info.get("raw", sol.info)}
+
     result: GlobalFitResult = GlobalFitResult(
         kinetics=kinetics,
         kinetics_ci=kinetics_ci,
@@ -266,17 +274,18 @@ def package_result(
         wavelengths=wl,
         times=times,
         diagnostics=diagnostics,
-        backend={"odr": odr_out},
+        backend=backend,
         _cache = {
             "lam": lam,
             "noise": noise,
             "kinetic_model": kinetic_model,
-            "beta": odr_out.beta,
+            "beta": beta,
             "cov_beta": cov_beta,
             "ci_sigma": ci_sigma,
             "ci_level": ci_level,
             "parameterization": param_type,
             "traces": traces,
+            "solver_info": sol.info,
         }
     )
     return result
@@ -293,6 +302,13 @@ def fit_global_kinetics(
         ci_sigma: float | None = None,
         ci_level: float | None = None,
         debug: bool = False,
+        solver: str | Solver = "odrpack",
+        maxit: int = 50,
+        use_noise_as_sy: bool = False,
+        sx: NDArray[np.floating] | None = None,
+        scope_ppm: float | None = None,
+        scope_jitter: float | None = None,
+        **kwargs,
     ) -> GlobalFitResult:
     """
     Perform a global kinetic fit using variable projection.
@@ -351,7 +367,7 @@ def fit_global_kinetics(
     t_flat: NDArray[np.floating] = np.tile(times, n_wl)
 
     # ODR model with separable kinetics and amplitudes
-    def odr_model(beta, t):
+    def f(t: NDArray[np.floating], beta: NDArray[np.floating]) -> NDArray[np.floating]:
         try:
             # Compute the kinetic model
             traces: NDArray[np.floating] = kinetic_model.solve(times, beta)
@@ -375,15 +391,62 @@ def fit_global_kinetics(
                 print("ODR model failure:", exc)
             return np.full_like(y_obs, 1e30)
 
-    # Run ODR
-    odr_data: odr.RealData = odr.RealData(t_flat, y_obs)
-    odr_mod: odr.Model = odr.Model(odr_model)
-    odr_func: odr.Output = odr.ODR(odr_data, odr_mod, beta0=beta0)
-    odr_func.set_job(deriv=1)
-    odr_out = odr_func.run()
+    weight_x = None
+    if sx is not None:
+        sx = np.asarray(sx, dtype=float).reshape(-1)
+        if sx.size == n_times:
+            sx_flat = np.tile(sx, n_wl)
+        elif sx.size == t_flat.size:
+            sx_flat = sx
+        else:
+            raise ValueError("sx must have shape (n_times,) or (n_times*n_wl,)")
+        weight_x = weights_from_sigma(sx_flat)
+
+    else:
+        # optional inference from oscilloscope metadata/args
+        ppm = None
+        jitter = None
+        if scope_ppm is not None and scope_jitter is not None:
+            ppm = float(scope_ppm)
+            jitter = float(scope_jitter)
+        elif meta is not None:
+            if meta.get("scope_ppm", None) is not None and meta.get("scope_jitter", None) is not None:
+                ppm = float(meta["scope_ppm"])
+                jitter = float(meta["scope_jitter"])
+
+        if ppm is not None and jitter is not None:
+            sx_t = time_sigma_from_scope(times, ppm=ppm, jitter=jitter)
+            sx_flat = np.tile(sx_t, n_wl)
+            weight_x = weights_from_sigma(sx_flat)
+
+    weight_y = None
+    if use_noise_as_sy:
+        # noise is per-wavelength; flatten to per-point
+        sy_flat = np.repeat(noise, n_times)
+        weight_y = weights_from_sigma(sy_flat)
+
+    if isinstance(solver, str):
+        name = solver.casefold().strip()
+        if name != "odrpack":
+            raise ValueError("Only solver='odrpack' is implemented in this draft.")
+        solver_obj: Solver = ODRPackSolver()
+    else:
+        solver_obj = solver
+
+    sol: SolverResult = solver_obj.fit(
+        f=f,
+        xdata=t_flat,
+        ydata=y_obs,
+        beta0=beta0,
+        weight_x=weight_x,
+        weight_y=weight_y,
+        maxit=maxit,
+        report="none",
+        **kwargs
+    )
 
     result: GlobalFitResult = package_result(
-        odr_out=odr_out,
+        sol=sol,
         kinetic_model=kinetic_model,
         times=times,
         wl=wl,
