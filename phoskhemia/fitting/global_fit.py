@@ -18,6 +18,7 @@ from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.fitting.projections import project_amplitudes, propagate_kinetic_covariance
 from phoskhemia.fitting.validation import compute_diagnostics
 from phoskhemia.fitting.results import GlobalFitResult, FitCache
+from phoskhemia.data.meta import MetaDict, meta_copy_update
 if TYPE_CHECKING:
     from phoskhemia.data.spectrum_handlers import TransientAbsorption
 
@@ -335,7 +336,7 @@ def fit_global_kinetics(
     """
 
     # Input preparation and validation
-    meta: dict[str, Any] | None = getattr(arr, "meta", None)
+    meta: MetaDict | None = getattr(arr, "meta", None)
     data: NDArray[np.floating] = np.asarray(arr, dtype=float)
     times: NDArray[np.floating] = np.asarray(arr.y, dtype=float)
     wl: NDArray[np.floating] = np.asarray(arr.x, dtype=float)
@@ -350,7 +351,7 @@ def fit_global_kinetics(
 
     # Default to unity noise if none provided
     if noise is None:
-        if meta is not None and meta.get("noise_t0", None) is not None:
+        if meta is not None and meta.noise_t0 is not None:
             noise: NDArray[np.floating] = meta["noise_t0"] 
         else:
             noise: NDArray[np.floating] = np.ones(n_wl, dtype=float)
@@ -410,9 +411,9 @@ def fit_global_kinetics(
             ppm = float(scope_ppm)
             jitter = float(scope_jitter)
         elif meta is not None:
-            if meta.get("scope_ppm", None) is not None and meta.get("scope_jitter", None) is not None:
-                ppm = float(meta["scope_ppm"])
-                jitter = float(meta["scope_jitter"])
+            if meta.scope_ppm is not None and meta.scope_jitter is not None:
+                ppm = float(meta.scope_ppm)
+                jitter = float(meta.scope_jitter)
 
         if ppm is not None and jitter is not None:
             sx_t = time_sigma_from_scope(times, ppm=ppm, jitter=jitter)

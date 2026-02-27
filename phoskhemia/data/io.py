@@ -6,7 +6,8 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from phoskhemia.data import TransientAbsorption
+from phoskhemia.data.spectrum_handlers import TransientAbsorption
+from phoskhemia.data.meta import MetaDict, meta_copy_update
 
 def _select_file_dialog(
         *,
@@ -67,13 +68,8 @@ def load_mat(
     if data.shape != (times.size, wl.size):
         raise ValueError(f"Parsed shape mismatch: data={data.shape}, times={times.size}, wl={wl.size}")
 
-    m = dict(meta) if meta is not None else {}
-    m.update(
-        {
-            "source_path": path,
-            "mat_key": key,
-        }
-    )
+    m = MetaDict.coerce(meta) if meta is not None else MetaDict.coerce({})
+    m = meta_copy_update(meta, {"source_path": path, "mat_key": key,})
     if store_probe_row:
         m["probe_transmittance"] = probe
 

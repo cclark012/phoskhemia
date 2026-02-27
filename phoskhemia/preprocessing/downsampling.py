@@ -4,6 +4,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from phoskhemia.data.spectrum_handlers import TransientAbsorption
+from phoskhemia.data.meta import MetaDict, meta_copy_update
 
 def time_indices_uniform(n: int, *, stride: int) -> NDArray[np.int64]:
     if stride < 1:
@@ -55,8 +56,7 @@ def downsample_time(
     idx: NDArray[np.int64] = np.asarray(idx, dtype=np.int64)
     data: NDArray[np.floating] = np.asarray(arr)[idx, :]
     y: NDArray[np.floating] = np.asarray(arr.y, dtype=float)[idx]
-    meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
-    meta.update({"downsample_idx_len": int(idx.size)})
+    meta: MetaDict = meta_copy_update(getattr(arr, "meta", None), {"downsample_idx_len": int(idx.size)})
     return TransientAbsorption(data, x=arr.x, y=y, meta=meta)
 
 def make_time_indices(
@@ -162,9 +162,9 @@ def downsample_time_binned(
     else:
         raise ValueError("data_stat must be one of 'mean', 'median', 'min', or 'max'")
 
-
-    meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
-    meta.update({
+    meta: MetaDict = meta_copy_update(
+        getattr(arr, "meta", None),
+        {
         "downsample_method": "binned",
         "downsample_bins": int(n_bins),
         "downsample_time_stat": time_stat,

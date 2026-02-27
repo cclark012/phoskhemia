@@ -11,6 +11,7 @@ from scipy.special import expit
 from numpy.typing import NDArray
 from phoskhemia.utils.typing import ArrayFloatAny
 from phoskhemia.data.spectrum_handlers import TransientAbsorption
+from phoskhemia.data.meta import MetaDict, meta_copy_update
 
 def arpls(
         array: NDArray[np.floating], 
@@ -416,28 +417,25 @@ def apply_time_zero(
     
     if mode == "shift":
         y_new: NDArray[np.floating] = t - t0
-        meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
-        meta.update(info)
+        meta: MetaDict = meta_copy_update(getattr(arr, "meta", None), {"info": info})
         if "noise_t0" in info:
-            meta["noise_t0"] = info["noise_t0"]
+            meta.noise_t0 = info["noise_t0"]
         return TransientAbsorption(data, x=arr.x, y=y_new, meta=meta), info
 
     elif mode == "truncate":
         data_new: NDArray[np.floating] = data[i0:, :]
         y_new: NDArray[np.floating] = t[i0:]
-        meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
-        meta.update(info)
+        meta: MetaDict = meta_copy_update(getattr(arr, "meta", None), {"info": info})
         if "noise_t0" in info:
-            meta["noise_t0"] = info["noise_t0"]
+            meta.noise_t0 = info["noise_t0"]
         return TransientAbsorption(data_new, x=arr.x, y=y_new, meta=meta), info
 
     elif mode == "truncate_shift":
         data_new: NDArray[np.floating] = data[i0:, :]
         y_new: NDArray[np.floating] = t[i0:] - t0
-        meta: dict[str, Any] = getattr(arr, "meta", {}).copy()
-        meta.update(info)
+        meta: MetaDict = meta_copy_update(getattr(arr, "meta", None), {"info": info})
         if "noise_t0" in info:
-            meta["noise_t0"] = info["noise_t0"]
+            meta.noise_t0 = info["noise_t0"]
         return TransientAbsorption(data_new, x=arr.x, y=y_new, meta=meta), info
 
     else:

@@ -5,6 +5,7 @@ from typing import Callable, Any, Literal, TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
+from phoskhemia.data.meta import MetaDict, meta_copy_update
 
 if TYPE_CHECKING:
     from phoskhemia.fitting.results import GlobalFitResult
@@ -44,7 +45,7 @@ class TransientAbsorption(np.ndarray):
     y: NDArray[np.floating]
     """ 1D array of time values.
     """
-    meta: dict[str, Any]
+    meta: MetaDict
     """ Dictionary of other metadata.
     """
 
@@ -194,6 +195,9 @@ class TransientAbsorption(np.ndarray):
 
         object.__setattr__(obj, "x", x)
         object.__setattr__(obj, "y", y)
+        if meta is None:
+            meta = {}
+        meta = MetaDict.coerce(meta)
         object.__setattr__(obj, "meta", meta)
 
         # One last validation
@@ -203,16 +207,24 @@ class TransientAbsorption(np.ndarray):
             raise ValueError("Data/axis mismatch")
         return obj
 
-    def __array_finalize__(
-            self, 
-            obj: TransientAbsorption | None
-            ) -> None:
-
+    def __array_finalize__(self, obj):
         if obj is None:
             return
-        object.__setattr__(self, "x", copy.copy(getattr(obj, "x", None)))
-        object.__setattr__(self, "y", copy.copy(getattr(obj, "y", None)))
-        object.__setattr__(self, "meta", copy.copy(getattr(obj, "meta", None)))
+
+        # share frozen axes (cheap)
+        object.__setattr__(self, "x", getattr(obj, "x", None))
+        object.__setattr__(self, "y", getattr(obj, "y", None))
+
+        # meta: copy mapping to avoid accidental cross-view mutation
+        m = getattr(obj, "meta", None)
+        if m is None:
+            m2 = MetaDict.coerce({})
+        else:
+            # shallow copy; does not copy nested arrays (which is fine)
+            m2 = MetaDict.coerce(dict(m))
+        object.__setattr__(self, "meta", m2)
+
+        object.__setattr__(self, "freeze_axes", getattr(obj, "freeze_axes", True))
 
     def __add__(
             self, 
@@ -605,7 +617,8 @@ class TransientAbsorption(np.ndarray):
 
         raise ValueError(f"mode must be one of {self._COMBINE_MODES}")
 
-    # TODO - Potentially add more mode and fill_val options, such as interpolation. 
+    # TODO - Potentially add more mode and fill_val options, such as interpolation.
+    # TODO - Currently not the most robust, eventually need to refactor. 
     def combine(
             self, 
             arr2: TransientAbsorption,
@@ -699,6 +712,7 @@ class TransientAbsorption(np.ndarray):
 
         # TODO - May refactor this part to be easier to follow and so there is not so much repetition.
         # Check which axis we are combining along and adjust order of arrays if necessary.
+        # If ys match, stack x.
         if np.array_equal(np.round(arr1.y, ARRAY_TOLERANCE), np.round(arr2.y, ARRAY_TOLERANCE)):
             # Two non-overlapping, positive arrays always have positive difference 
             # for min(arr2) - max(arr1) if in the order arr1 arr2. If the arrays 
@@ -746,6 +760,7 @@ class TransientAbsorption(np.ndarray):
 
             axis, ax1, ax2 = 1, arr1.x, arr2.x
 
+        # If xs match, stack y.
         elif np.array_equal(np.round(arr1.x, ARRAY_TOLERANCE), np.round(arr2.x, ARRAY_TOLERANCE)):
             intersection, idx1, idx2 = np.intersect1d(
                 np.round(arr1.y, ARRAY_TOLERANCE), 
@@ -760,7 +775,7 @@ class TransientAbsorption(np.ndarray):
                 arr1, arr2 = arr2, arr1
                 idx1, idx2 = idx2, idx1
 
-            axis, ax1, ax2 = 1, arr1.y, arr2.y
+            axis, ax1, ax2 = 0, arr1.y, arr2.y
 
         else:
             raise ValueError(
@@ -866,8 +881,8 @@ class TransientAbsorption(np.ndarray):
         if aggregate in ['mean', 'median', 'min', 'max']:
             from phoskhemia.preprocessing.downsampling import downsample_time_binned
             array = downsample_time_binned(self, indices, data_stat=aggregate)
-            if aggregate == "mean" and array.meta.get("noise_t0", None) is not None:
-                array.meta["noise_t0"] *= scaling
+            if aggregate == "mean" and array.meta.noise_t0 is not None:
+                array.meta.noise_t0 *= scaling
                 
             return array
 
@@ -968,10 +983,9 @@ class TransientAbsorption(np.ndarray):
         """
         from phoskhemia.preprocessing.smoothing import conv_smooth
         result, noise_scale = conv_smooth(self, window, normalize=normalize, separable_tol=separable_tol, **kwargs)
-        meta = dict(self.meta) if getattr(self, "meta", None) is not None else {}
-        meta.update({"smoothed": True, "smooth_window": str(window)})
-        if meta.get("noise_t0", None) is not None:
-            meta["noise_t0"] *= noise_scale
+        meta: MetaDict = meta_copy_update(getattr(self, "meta", None), {"smoothed": True, "smooth_window": str(window)})
+        if meta.noise_t0 is not None:
+            meta.noise_t0 *= noise_scale
         return TransientAbsorption(result, x=self.x, y=self.y, meta=meta)
 
     def spectrum(
@@ -1024,8 +1038,8 @@ class TransientAbsorption(np.ndarray):
 
         from phoskhemia.preprocessing.svd_denoise import svd_denoise
 
-        if noise is None and self.meta.get("noise_t0", None) is not None:
-            noise = self.meta["noise_t0"]
+        if noise is None and self.meta.noise_t0 is not None:
+            noise = self.meta.noise_t0
 
         out = svd_denoise(
             np.asarray(self, dtype=float),
@@ -1113,4 +1127,28 @@ class TransientAbsorption(np.ndarray):
             return (out, j0) if return_index else out  # j0 = left bracket
 
         raise ValueError("method must be 'nearest' or 'interp'")
+    
+    @classmethod
+    def from_arrays(
+            cls,
+            *,
+            data: NDArray[np.floating],
+            x: NDArray[np.floating] | None,
+            y: NDArray[np.floating] | None,
+            meta: dict[str, Any] | None = None,
+            freeze_axes: bool = True,
+            dtype: type = float,
+        ) -> "TransientAbsorption":
 
+        return cls(data, x=x, y=y, meta=meta, freeze_axes=freeze_axes, dtype=dtype)
+
+def as_ta(
+        arr: NDArray[np.floating],
+        *,
+        x: NDArray[np.floating] | None = None,
+        y: NDArray[np.floating] | None = None,
+        meta: dict[str, Any] | None = None,
+        freeze_axes: bool = True,
+        dtype: type = float,
+    ) -> TransientAbsorption:
+    return TransientAbsorption(arr, x=x, y=y, meta=meta, freeze_axes=freeze_axes, dtype=dtype)
