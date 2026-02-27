@@ -177,8 +177,6 @@ class TransientAbsorption(np.ndarray):
             x: NDArray[np.floating] = np.arange(ncols, dtype=float)
         if y is None:
             y: NDArray[np.floating] = np.arange(nrows, dtype=float)
-        if meta is None:
-            meta: dict[str, Any] = {}
 
         x: NDArray[np.floating] = np.asarray(x, dtype=float)
         y: NDArray[np.floating] = np.asarray(y, dtype=float)
@@ -195,9 +193,7 @@ class TransientAbsorption(np.ndarray):
 
         object.__setattr__(obj, "x", x)
         object.__setattr__(obj, "y", y)
-        if meta is None:
-            meta = {}
-        meta = MetaDict.coerce(meta)
+        meta: MetaDict = MetaDict.coerce(meta or {})
         object.__setattr__(obj, "meta", meta)
 
         # One last validation
@@ -984,8 +980,11 @@ class TransientAbsorption(np.ndarray):
         from phoskhemia.preprocessing.smoothing import conv_smooth
         result, noise_scale = conv_smooth(self, window, normalize=normalize, separable_tol=separable_tol, **kwargs)
         meta: MetaDict = meta_copy_update(getattr(self, "meta", None), {"smoothed": True, "smooth_window": str(window)})
-        if meta.noise_t0 is not None:
-            meta.noise_t0 *= noise_scale
+        nt0: NDArray[np.floating] | float | None = meta.noise_t0
+        if isinstance(nt0, np.ndarray):
+            meta.noise_t0 = nt0 * noise_scale
+        elif nt0 is not None:
+            meta.noise_t0 = float(nt0) * noise_scale
         return TransientAbsorption(result, x=self.x, y=self.y, meta=meta)
 
     def spectrum(

@@ -68,8 +68,7 @@ def load_mat(
     if data.shape != (times.size, wl.size):
         raise ValueError(f"Parsed shape mismatch: data={data.shape}, times={times.size}, wl={wl.size}")
 
-    m = MetaDict.coerce(meta) if meta is not None else MetaDict.coerce({})
-    m = meta_copy_update(meta, {"source_path": path, "mat_key": key,})
+    m: MetaDict = meta_copy_update(meta, {"source_path": path, "mat_key": key,})
     if store_probe_row:
         m["probe_transmittance"] = probe
 

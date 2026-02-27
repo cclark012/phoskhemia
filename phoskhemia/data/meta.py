@@ -21,7 +21,7 @@ class MetaDict(dict[str, Any]):
         if v is None:
             return None
         # preserve arrays; coerce sequences to ndarray only if you want
-        if isinstance(v, NDArray[np.floating]):
+        if isinstance(v, np.ndarray):
             return v
         # allow scalar numeric
         if np.isscalar(v):
