@@ -923,6 +923,12 @@ class TransientAbsorption(np.ndarray):
         ) -> Path:
         """
         Export slices of TA to CSV.
+        
+        Notes
+        -----
+        This API is functional but may change in a future release. Future updates
+        would likely change the slice-selection interface (w and w_idx, t and t_idx)
+        and formatting controls to be more robust and easy to use.
 
         1D:
             - kind="trace": time vs signal at wavelength w (or w_idx of length 1)
