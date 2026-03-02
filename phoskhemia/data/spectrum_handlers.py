@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import copy
-from typing import Callable, Any, Literal, TYPE_CHECKING
+import csv
+from pathlib import Path
+from typing import Callable, Any, Literal, TYPE_CHECKING, overload
+import warnings
 
 import numpy as np
 from numpy.typing import NDArray
 from phoskhemia.data.meta import MetaDict, meta_copy_update
+from phoskhemia.utils.indexing import _nearest_index
 
 if TYPE_CHECKING:
     from phoskhemia.fitting.results import GlobalFitResult
     from phoskhemia.kinetics.base import KineticModel
+    from phoskhemia.fitting.solvers import Solver
 
 class TransientAbsorption(np.ndarray):
     """
@@ -26,14 +31,24 @@ class TransientAbsorption(np.ndarray):
 
     Methods
     -------
-    smooth(window, normalize=True, separable_tol=1e-10, **kwargs)
-        Smooths the data with a provided window or window size.
-    combine_with(other, mode='average', fill_value=0.0)
+    add(other, mode='average', fill_value=None)
+        Equivalent to combine().
+    combine(arr2, mode='average', fill_value=None)
         Combines two TransientAbsorption arrays into one dataset.
-    add(other, mode='average', fill_value=0.0)
-        Equivalent to combine_with().
+    downsample_time(method='log', aggregate='none', **kwargs)
+    
     fit_global_kinetics(*args, **kwargs)
         Fit the dataset to a kinetic model.
+    smooth(window, normalize=True, separable_tol=1e-10, **kwargs)
+        Smooths the data with a provided window or window size.
+    spectrum(time, method='nearest', aggregate=0, return_index=False)
+    
+    svd_denoise(method=ek18, value_rotation='exclude', threshold=0.05, center='time', noise=None, weight='none', return_details=False)
+    
+    time_zero(mode='truncate_shift', t0=0, use_pre_t0_for_noise=True, noise_method='std')
+    
+    trace(wavelength_nm, method='nearest', return_index=False)
+    
     """
 
     __array_priority__: float = 1000.0
@@ -888,6 +903,177 @@ class TransientAbsorption(np.ndarray):
         else:
             raise ValueError("aggregate must be one of 'mean' or 'none'")
 
+    # TODO - May update this to be less verbose with arguments.
+    def export_csv(
+            self,
+            path: str | Path,
+            *,
+            kind: Literal["auto", "dataset", "trace", "spectrum"] = "auto",
+            format: Literal["wide", "long"] = "wide",
+            delimiter: str = ",",
+            float_format: str = "{:.17g}",
+            t: float | None = None,
+            w: float | None = None,
+            t_idx: slice | NDArray[np.int64] | None = None,
+            w_idx: slice | NDArray[np.int64] | None = None,
+            warn_mb: float = 50.0,
+            max_mb: float = 250.0,
+            force: bool = False,
+            chars_per_value: int = 20,
+        ) -> Path:
+        """
+        Export slices of TA to CSV.
+
+        1D:
+            - kind="trace": time vs signal at wavelength w (or w_idx of length 1)
+            - kind="spectrum": wavelength vs signal at time t (or t_idx of length 1)
+
+        2D:
+            - kind="dataset": time×wavelength slice (t_idx, w_idx)
+            format="wide": rows=time, cols=wavelengths (+time column)
+            format="long": rows=time*wavelength with columns (time, wavelength, signal)
+
+        Size guard:
+            - warns at warn_mb
+            - raises at max_mb unless force=True
+        Parameters
+        ----------
+        path : str | Path
+            _description_
+        kind : Literal["auto", "dataset", "trace", "spectrum"], optional
+            _description_, by default "auto"
+        format : Literal["wide", "long"], optional
+            _description_, by default "wide"
+        delimiter : str, optional
+            _description_, by default ","
+        float_format : _type_, optional
+            _description_, by default "{:.17g}"
+        t : float | None, optional
+            _description_, by default None
+        w : float | None, optional
+            _description_, by default None
+        t_idx : slice | NDArray[np.int64] | None, optional
+            _description_, by default None
+        w_idx : slice | NDArray[np.int64] | None, optional
+            _description_, by default None
+        warn_mb : float, optional
+            _description_, by default 50.0
+        max_mb : float, optional
+            _description_, by default 250.0
+        force : bool, optional
+            _description_, by default False
+        chars_per_value : int, optional
+            _description_, by default 20
+
+        Returns
+        -------
+        Path
+            _description_
+
+        Raises
+        ------
+        ValueError
+            _description_
+        ValueError
+            _description_
+        ValueError
+            _description_
+        ValueError
+            _description_
+        """
+
+        
+        from phoskhemia.utils.formatting import estimate_csv_bytes
+
+        path = Path(path)
+        if path.suffix.lower() != ".csv":
+            path = path.with_suffix(".csv")
+
+        data: NDArray[np.floating] = np.asarray(self, dtype=float)
+        times: NDArray[np.floating] = np.asarray(self.y, dtype=float).reshape(-1)
+        waves: NDArray[np.floating] = np.asarray(self.x, dtype=float).reshape(-1)
+
+        # infer kind if needed
+        if kind == "auto":
+            if w is not None or (w_idx is not None and not isinstance(w_idx, slice)):
+                kind = "trace" if t is None and t_idx is None else "dataset"
+            elif t is not None or (t_idx is not None and not isinstance(t_idx, slice)):
+                kind = "spectrum" if w is None and w_idx is None else "dataset"
+            else:
+                kind = "dataset"
+
+        # build concrete indices
+        if kind == "trace":
+            if w is None and w_idx is None:
+                raise ValueError("trace export requires w or w_idx")
+            j: int = _nearest_index(waves, w) if w is not None else int(np.asarray(w_idx).reshape(-1)[0])
+            y1: NDArray[np.floating] = data[:, j]
+            # size: 2 columns, n_t rows
+            est: int = estimate_csv_bytes(times.size, 2, chars_per_value=chars_per_value, delimiter=delimiter)
+            self._csv_size_guard(est_bytes=est, warn_mb=warn_mb, max_mb=max_mb, force=force)
+
+            with path.open("w", newline="") as f:
+                writer: csv._writer = csv.writer(f, delimiter=delimiter)
+                writer.writerow(["time", "signal"])
+                for tt, vv in zip(times, y1):
+                    writer.writerow([float_format.format(tt), float_format.format(vv)])
+            return path
+
+        if kind == "spectrum":
+            if t is None and t_idx is None:
+                raise ValueError("spectrum export requires t or t_idx")
+            i: int = _nearest_index(times, t) if t is not None else int(np.asarray(t_idx).reshape(-1)[0])
+            y1: NDArray[np.floating] = data[i, :]
+            est: int = estimate_csv_bytes(waves.size, 2, chars_per_value=chars_per_value, delimiter=delimiter)
+            self._csv_size_guard(est_bytes=est, warn_mb=warn_mb, max_mb=max_mb, force=force)
+
+            with path.open("w", newline="") as f:
+                writer: csv._writer = csv.writer(f, delimiter=delimiter)
+                writer.writerow(["wavelength", "signal"])
+                for ww, vv in zip(waves, y1):
+                    writer.writerow([float_format.format(ww), float_format.format(vv)])
+            return path
+
+        if kind != "dataset":
+            raise ValueError("kind must be one of auto|dataset|trace|spectrum")
+
+        ti = t_idx if t_idx is not None else slice(None)
+        wi = w_idx if w_idx is not None else slice(None)
+
+        data_s: NDArray[np.floating] = data[ti, :][:, wi]
+        t_s: NDArray[np.floating] = times[ti]
+        w_s: NDArray[np.floating] = waves[wi]
+
+        if format == "wide":
+            # columns: time + wavelengths
+            n_rows: int = int(data_s.shape[0])
+            n_cols: int = int(data_s.shape[1]) + 1
+            est: int = estimate_csv_bytes(n_rows, n_cols, chars_per_value=chars_per_value, delimiter=delimiter)
+            self._csv_size_guard(est_bytes=est, warn_mb=warn_mb, max_mb=max_mb, force=force)
+
+            with path.open("w", newline="") as f:
+                writer: csv._writer = csv.writer(f, delimiter=delimiter)
+                writer.writerow(["time"] + [float_format.format(ww) for ww in w_s])
+                for i, tt in enumerate(t_s):
+                    writer.writerow([float_format.format(tt)] + [float_format.format(vv) for vv in data_s[i, :]])
+            return path
+
+        if format == "long":
+            # rows: n_t * n_w, cols: 3
+            n_rows: int = int(data_s.size)
+            est: int = estimate_csv_bytes(n_rows, 3, chars_per_value=chars_per_value, delimiter=delimiter)
+            self._csv_size_guard(est_bytes=est, warn_mb=warn_mb, max_mb=max_mb, force=force)
+
+            with path.open("w", newline="") as f:
+                writer: csv._writer = csv.writer(f, delimiter=delimiter)
+                writer.writerow(["time", "wavelength", "signal"])
+                for i, tt in enumerate(t_s):
+                    for j, ww in enumerate(w_s):
+                        writer.writerow([float_format.format(tt), float_format.format(ww), float_format.format(data_s[i, j])])
+            return path
+
+        raise ValueError("format must be 'wide' or 'long'")
+
     def fit_global_kinetics(
         self,
         kinetic_model: KineticModel,
@@ -899,6 +1085,13 @@ class TransientAbsorption(np.ndarray):
         ci_sigma: float | None = None,
         ci_level: float | None = None,
         debug: bool = False,
+        solver: str | Solver = "odrpack",
+        maxit: int = 50,
+        use_noise_as_sy: bool = False,
+        sx: NDArray[np.floating] | None = None,
+        scope_ppm: float | None = None,
+        scope_jitter: float | None = None,
+        **kwargs,
     ) -> GlobalFitResult:
         """
         Fit data to a kinetic model. See phoskhemia.fitting.global_fit.fit_global_kinetics(). 
@@ -940,7 +1133,14 @@ class TransientAbsorption(np.ndarray):
             propagate_kinetic_uncertainty=propagate_kinetic_uncertainty, 
             ci_sigma=ci_sigma, 
             ci_level=ci_level, 
-            debug=debug
+            debug=debug,
+            solver=solver,
+            maxit=maxit,
+            use_noise_as_sy=use_noise_as_sy,
+            sx=sx,
+            scope_ppm=scope_ppm,
+            scope_jitter=scope_jitter,
+            **kwargs,
         )
         return result
 
@@ -1140,6 +1340,22 @@ class TransientAbsorption(np.ndarray):
         ) -> "TransientAbsorption":
 
         return cls(data, x=x, y=y, meta=meta, freeze_axes=freeze_axes, dtype=dtype)
+
+    @staticmethod
+    def _csv_size_guard(*, est_bytes: int, warn_mb: float, max_mb: float, force: bool) -> None:
+        est_mb: float = est_bytes / (1024 * 1024)
+        if est_mb >= float(warn_mb):
+            warnings.warn(
+                f"CSV export estimated size ~{est_mb:.1f} MB. "
+                "Consider exporting a smaller slice or using NPZ.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+        if (not force) and est_mb >= float(max_mb):
+            raise ValueError(
+                f"Refusing to export very large CSV (~{est_mb:.1f} MB). "
+                f"Increase max_mb or set force=True to override."
+            )
 
 def as_ta(
         arr: NDArray[np.floating],
