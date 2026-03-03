@@ -874,6 +874,7 @@ class TransientAbsorption(np.ndarray):
                     new_data[len(ax1)+len(filled):, :] = np.array(arr2)
                     return TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax, meta=copy.copy(self.meta))
 
+    # TODO - Aggregate is only implemented for mean with linear indices.
     def downsample_time(
             self,
             *,
