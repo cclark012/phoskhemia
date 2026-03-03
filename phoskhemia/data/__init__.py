@@ -8,6 +8,6 @@ if TYPE_CHECKING:
 
 def __getattr__(name: str):
     if name == "TransientAbsorption":
-        from phoskhemia.data import TransientAbsorption
+        from phoskhemia.data.spectrum_handlers import TransientAbsorption
         return TransientAbsorption
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
