@@ -13,6 +13,51 @@ from phoskhemia.utils.typing import ArrayFloatAny
 from phoskhemia.data.spectrum_handlers import TransientAbsorption
 from phoskhemia.data.meta import MetaDict, meta_copy_update
 
+def whittaker_smoother(
+        array: NDArray[np.floating],
+        weights: NDArray[np.floating],
+        lam: float,
+        differences: int
+    ) -> NDArray[np.floating]:
+    
+    array: NDArray[np.floating] = np.asarray(array, dtype=float)
+    n_elements: int = array.size
+    diff = sparse.eye(n_elements, format='csc')
+    for _ in range(differences):
+        diff = diff[1:] - diff[:-1]
+    weights_diag = diags_array(weights, offsets=0, shape=(n_elements, n_elements))
+    sym_band_diag = csr_array(weights_diag + lam * diff.T * diff)
+    background = spsolve(sym_band_diag, weights * array, permc_spec="NATURAL")
+    return np.asarray(background)
+
+def airpls(
+        array: NDArray[np.floating],
+        lam: float = 100.0,
+        order: int = 1,
+        itermax: int = 100
+    ) -> NDArray[np.floating]:
+    
+    array: NDArray[np.floating] = np.asarray(array, dtype=float)
+    n_elements: int = array.size
+    weights = np.ones(n_elements, dtype=float)
+    tol = 0.001 * np.abs(array).sum()
+    for i in range(itermax):
+        background = whittaker_smoother(array, weights, lam, order)
+        diff = array - background
+        sumsq_errs = np.abs(diff[diff < 0].sum())
+        if sumsq_errs <= tol:
+            break
+        
+        weights[diff >= 0] = 0
+        weights[diff < 0] = np.exp(i * np.abs(diff[diff < 0]) / sumsq_errs)
+        weights[0] = np.exp(i * (diff[diff < 0]).max() / sumsq_errs)
+        weights[-1] = weights[0]
+
+    else:
+        print(f"Warning: reached itermax = {itermax} before converging")
+    
+    return background
+
 def arpls(
         array: NDArray[np.floating], 
         lam: float | int=1e4, 
@@ -90,7 +135,7 @@ def arpls(
     weights: NDArray[np.floating] = np.ones(n_elements)
 
     # Perform itermax number of iterations at most.
-    for i in range(itermax):
+    for _ in range(itermax):
         weights_diag: NDArray[np.floating] = (
             diags_array(weights, offsets=0, shape=(n_elements, n_elements))
         )
