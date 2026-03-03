@@ -9,6 +9,8 @@ from numpy.typing import NDArray
 from phoskhemia.kinetics.base import KineticModel
 
 SummaryStyle = Literal["brief", "technical", "journal", "verbose"]
+RenderFormat = Literal["terminal", "plain", "latex"]
+
 @dataclass(frozen=True)
 class ReportRow:
     key: str
@@ -96,10 +98,26 @@ def cov_lognormal(
     cov_p: NDArray[np.floating] = A * (np.exp(S) - 1.0)
     return cov_p
 
+
+def sd_lognormal(
+        beta: NDArray[np.floating], 
+        sd_beta: NDArray[np.floating]
+    ) -> NDArray[np.floating]:
+    """Compute the standard deviation from log-space values and uncertainties."""
+
+    s2: NDArray[np.floating] = np.square(sd_beta)
+    mean_p: NDArray[np.floating] = np.exp(beta + 0.5*s2)
+    sd_p: NDArray[np.floating] = mean_p * np.sqrt(np.exp(s2) - 1.0)
+    return sd_p
+
 def _fmt_float(x: float, digits: int = 3) -> str:
     """Compact numeric formatting: fixed for moderate values, scientific otherwise."""
+    fx = float(x)
+    if not np.isfinite(fx):
+        return str(fx)
+
     VALUE_RANGE: tuple[float, float] = (1e-3, 1e4)
-    abs_x: float = abs(float(x))
+    abs_x: float = abs(fx)
     if abs_x == 0.0:
         return "0"
     if (abs_x < VALUE_RANGE[0]) or (abs_x >= VALUE_RANGE[1]):
@@ -128,16 +146,6 @@ def _normalize_str_list(
             out = out[:n]
     return out
 
-def _block_header(title: str, width: int) -> str:
-    # Construct a header that is centered in a given width.
-    return f"|{title:-^{width-1}}|"
-
-def _kv_line(key: str, val: str, width: int, key_w: int = 22) -> str:
-    # | key.................. = value............................... |
-    rhs_w = max(0, width - (key_w + 6))
-    v = val if len(val) <= rhs_w else (val[: max(0, rhs_w - 3)] + "...")
-    return f"| {key:<{key_w}} = {v:<{rhs_w}} |"
-
 def _safe_float(v) -> float | None:
     """Tries to convert to float, returning None in case of an Exception."""
     try:
@@ -147,6 +155,16 @@ def _safe_float(v) -> float | None:
             return None
     except Exception:
         return None
+
+def _block_header(title: str, width: int) -> str:
+    # Construct a header that is centered in a given width.
+    return f"|{title:-^{width-1}}|"
+
+def _kv_line(key: str, val: str, width: int, key_w: int = 22) -> str:
+    # | key.................. = value............................... |
+    rhs_w = max(0, width - (key_w + 6))
+    v = val if len(val) <= rhs_w else (val[: max(0, rhs_w - 3)] + "...")
+    return f"| {key:<{key_w}} = {v:<{rhs_w}} |"
 
 def _top_correlations(
         cov: NDArray[np.floating],
@@ -180,16 +198,26 @@ def _top_correlations(
     pairs.sort(key=lambda t: abs(t[2]), reverse=True)
     return pairs[: max(0, int(top_n))]
 
-def sd_lognormal(
-        beta: NDArray[np.floating], 
-        sd_beta: NDArray[np.floating]
-    ) -> NDArray[np.floating]:
-    """Compute the standard deviation from log-space values and uncertainties."""
+def _full_correlation_rows(
+        cov: NDArray[np.floating],
+        names: list[str],
+        *,
+        digits: int = 3,
+        max_dim: int = 10,
+    ) -> list[ReportRow]:
+    """Render a full correlation matrix. Falls back to shape hint for large matrices."""
 
-    s2: NDArray[np.floating] = np.square(sd_beta)
-    mean_p: NDArray[np.floating] = np.exp(beta + 0.5*s2)
-    sd_p: NDArray[np.floating] = mean_p * np.sqrt(np.exp(s2) - 1.0)
-    return sd_p
+    n = cov.shape[0]
+    if n > max_dim:
+        return [ReportRow("Shape", f"{n}×{n} (use result.cov_beta directly)")]
+    sd = np.sqrt(np.diag(cov))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        corr = cov / (sd[:, None] * sd[None, :])
+    rows: list[ReportRow] = []
+    for i, name in enumerate(names):
+        vals = "  ".join(_fmt_float(corr[i, j], digits) for j in range(n))
+        rows.append(ReportRow(name, vals))
+    return rows
 
 def _cov_for_summary(result: GlobalFitResult) -> tuple[NDArray[np.floating] | None, str]:
     covb = result.cov_beta
