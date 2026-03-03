@@ -42,12 +42,12 @@ class BiexponentialModel(KineticModel):
 
     def solve(self, times, beta):
         # tau1, tau2, b = np.exp(beta)
-        tau1, tau2, b = (beta)
+        tau1, tau2, b = np.exp(beta)
         a_star = b * np.exp(-times / tau1) + (1 - b) * np.exp(-times / tau2)
         return np.atleast_2d(a_star).T
     
     def parameterization(self):
-        return "linear"
+        return "log"
 
 class TriexponentialModel(KineticModel):
     """
