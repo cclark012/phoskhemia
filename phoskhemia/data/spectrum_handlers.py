@@ -893,7 +893,10 @@ class TransientAbsorption(np.ndarray):
             from phoskhemia.preprocessing.downsampling import downsample_time_binned
             array = downsample_time_binned(self, indices, data_stat=aggregate)
             if aggregate == "mean" and array.meta.noise_t0 is not None:
-                array.meta.noise_t0 *= scaling
+                if isinstance(array.meta.noise_t0, np.ndarray):
+                    array.meta.noise_t0 = array.meta.noise_t0 * scaling
+                else:
+                    array.meta.noise_t0 = float(array.meta.noise_t0) * scaling
                 
             return array
 
@@ -1242,6 +1245,7 @@ class TransientAbsorption(np.ndarray):
         ) -> "TransientAbsorption" | tuple["TransientAbsorption", dict[str, Any]]:
 
         from phoskhemia.preprocessing.svd_denoise import svd_denoise
+        from phoskhemia.data.meta import meta_copy_update
 
         if noise is None and self.meta.noise_t0 is not None:
             noise = self.meta.noise_t0
@@ -1259,14 +1263,23 @@ class TransientAbsorption(np.ndarray):
 
         if return_details:
             arr_hat, info = out
-            ta_hat = TransientAbsorption(arr_hat, x=self.x, y=self.y, meta=self.meta)
-            ta_hat.meta["svd_denoise"] = info.get("wrapper", {})
-            ta_hat.meta["svd_info"] = info
-            return ta_hat, info
+            meta = meta_copy_update(getattr(self, "meta", None), {})
+            meta["svd_denoise"] = info.get("wrapper", {})
+            meta["svd_info"] = info
+            return TransientAbsorption(arr_hat, x=self.x, y=self.y, meta=meta), info
 
-        ta_hat = TransientAbsorption(out, x=self.x, y=self.y, meta=self.meta)
-        ta_hat.meta["svd_denoise"] = {"method": method, "value_rotation": value_rotation, "threshold": threshold}
-        return ta_hat
+        meta = meta_copy_update(
+            getattr(self, "meta", None),
+            {
+                "svd_denoise": {
+                    "method": method,
+                    "value_rotation": value_rotation,
+                    "threshold": threshold
+                }
+            },
+        )
+
+        return TransientAbsorption(out, x=self.x, y=self.y, meta=meta)
 
     def time_zero(
             self,
