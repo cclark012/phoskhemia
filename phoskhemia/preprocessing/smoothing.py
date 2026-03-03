@@ -4,8 +4,6 @@ import scipy as sp
 from numba import njit, prange
 from scipy.signal import convolve
 
-from phoskhemia.data.spectrum_handlers import TransientAbsorption
-
 def fourier_gaussian_smooth(
         array: np.typing.ArrayLike | list, 
         sigma: float=40, 
@@ -438,7 +436,7 @@ def svd_smooth(
         norm_svd = svd_vals / np.max(svd_vals)
         components = len(svd_vals[norm_svd > relative_magnitude])
         reconstruction = U[:, :components] @ np.diag(svd_vals[:components]) @ Vh[:components, :]
-        relative_magnitude_reconstruction = relative_magnitude
+        # relative_magnitude_reconstruction = relative_magnitude
         print(f'{f'SVD Reconstruction performed with {components} / {len(svd_vals)} components' : ^55}')
 
     return reconstruction
@@ -568,7 +566,7 @@ def smooth_via_OSVHT(
     nobs, minmax, mean, variance, skew, kurt = sp.stats.describe(residuals.flat)
     minimum, maximum = minmax
 
-    print(f'{f'Distribution of Residuals from SVD' :-^55}')
+    print(f'{'Distribution of Residuals from SVD' :-^55}')
     print(
         f'| {'Minimum' :<25} {'x̌' :<5}  = {minimum * 1e3 : >{12}.3f} {'mOD' :<4}{'|' :>2}'
     )

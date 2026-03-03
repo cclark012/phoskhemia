@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Literal, Sequence
+from typing import Literal
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from numpy.typing import NDArray

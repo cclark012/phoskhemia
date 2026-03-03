@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
-from dataclasses import dataclass
+from typing import TYPE_CHECKING
 import warnings
 
 import numpy as np
@@ -17,8 +16,8 @@ from phoskhemia.fitting.solvers import (
 from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.fitting.projections import project_amplitudes, propagate_kinetic_covariance
 from phoskhemia.fitting.validation import compute_diagnostics
-from phoskhemia.fitting.results import GlobalFitResult, FitCache
-from phoskhemia.data.meta import MetaDict, meta_copy_update
+from phoskhemia.fitting.results import GlobalFitResult
+from phoskhemia.data.meta import MetaDict
 if TYPE_CHECKING:
     from phoskhemia.data.spectrum_handlers import TransientAbsorption
 

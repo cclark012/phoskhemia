@@ -8,7 +8,6 @@ from scipy.sparse import diags_array, csr_array
 from scipy.sparse.linalg import spsolve
 # from scipy.linalg import cholesky
 from scipy.special import expit
-from numpy.typing import NDArray
 from phoskhemia.utils.typing import ArrayFloatAny
 from phoskhemia.data.spectrum_handlers import TransientAbsorption
 from phoskhemia.data.meta import MetaDict, meta_copy_update
@@ -349,10 +348,10 @@ def find_time_zero(
             print(f"Data shifted forward by {np.abs(shift_value) * delta_t} ns.")
 
         elif shift_value == 0:
-            print(f"Data was not shifted.")
+            print("Data was not shifted.")
 
         else:
-            print(f"Something went wrong. Check the data output.")
+            print("Something went wrong. Check the data output.")
 
     return times, data
 

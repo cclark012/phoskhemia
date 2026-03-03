@@ -72,7 +72,7 @@ def xenon_irradiance_emulated(
     x: NDArray[np.floating] = b / wl_m
     # avoid overflow in exp
     x = np.clip(x, 1e-9, 700.0)
-    I: NDArray[np.floating] = a / (wl_m**5 * (np.exp(x) - 1.0))
+    intensity: NDArray[np.floating] = a / (wl_m**5 * (np.exp(x) - 1.0))
 
     # Optional broad windowing to focus on a band (e.g., 320–850 nm)
     if window_nm is not None:
@@ -82,13 +82,13 @@ def xenon_irradiance_emulated(
         # smooth logistic edges
         s: float = 5.0  # nm edge softness
         w: NDArray[np.floating] = 1.0 / (1.0 + np.exp(-(wl_nm - lo) / s)) * (1.0 / (1.0 + np.exp((wl_nm - hi) / s)))
-        I = I * w
+        intensity = intensity * w
 
-    I = np.where(np.isfinite(I) & (I > 0), I, 0.0)
+    intensity = np.where(np.isfinite(intensity) & (intensity > 0), intensity, 0.0)
 
     if normalize:
-        m: float = float(np.max(I)) if np.max(I) > 0 else 1.0
-        I = I / m
+        m: float = float(np.max(intensity)) if np.max(intensity) > 0 else 1.0
+        intensity = intensity / m
 
-    return I.astype(float)
+    return intensity.astype(float)
 

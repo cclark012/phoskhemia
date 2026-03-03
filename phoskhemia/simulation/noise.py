@@ -106,16 +106,16 @@ def sigma_lambda_from_transmitted(
             raise ValueError("A0 must be scalar or same length as lamp_rel")
 
     T: NDArray[np.floating] = 10.0 ** (-A0_arr)
-    I: NDArray[np.floating] = I0 * T
+    intensity: NDArray[np.floating] = I0 * T
 
     rn2: float = float(read_noise_counts) ** 2
 
-    var_I: NDArray[np.floating] = I + rn2
+    var_I: NDArray[np.floating] = intensity + rn2
     var_I0: NDArray[np.floating] = I0 + rn2
 
     # guard
     eps: float = 1e-30
-    I_safe: NDArray[np.floating] = np.maximum(I, eps)
+    I_safe: NDArray[np.floating] = np.maximum(intensity, eps)
     I0_safe: NDArray[np.floating] = np.maximum(I0, eps)
 
     term: NDArray[np.floating] = var_I / (I_safe**2)

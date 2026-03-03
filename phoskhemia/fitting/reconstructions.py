@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
@@ -62,7 +62,7 @@ def reconstruct_species(
         Contribution of the selected species
     """
 
-    cache: dict[str, Any] = result._cache
+    # cache: dict[str, Any] = result._cache
 
     traces: NDArray[np.floating] = result.traces           # (n_times, n_species)
     times: NDArray[np.floating] = result.times

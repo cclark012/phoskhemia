@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from typing import Literal, Any
 import matplotlib.pyplot as plt
-import matplotlib as mpl
 from matplotlib.axes import Axes
 from matplotlib.contour import QuadContourSet
 from matplotlib.collections import QuadMesh
-from matplotlib.figure import Figure
 from matplotlib.colors import Colormap
-from matplotlib import rcParams, ticker
+from matplotlib import rcParams
 import numpy as np
 from numpy.typing import NDArray
 from phoskhemia.data.spectrum_handlers import TransientAbsorption

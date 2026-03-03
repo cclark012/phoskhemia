@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import csv
 from pathlib import Path
-from typing import Callable, Any, Literal, TYPE_CHECKING, overload
+from typing import Callable, Any, Literal, TYPE_CHECKING
 import warnings
 
 import numpy as np
@@ -849,7 +849,7 @@ class TransientAbsorption(np.ndarray):
             unique, counts = np.unique(diff, return_counts=True)
             # Concatenate both axes regardless of spacing for fill_value = None and 
             # when gap size is equal to either of the array spacings.
-            if fill_val == None or (len(unique) == 2 and not np.any(counts == 1)):
+            if fill_val is None or (len(unique) == 2 and not np.any(counts == 1)):
                 new_ax: NDArray[np.floating] = comb
                 new_data: NDArray[np.floating] = np.concatenate((np.array(arr1), np.array(arr2)), axis=axis)
                 return (

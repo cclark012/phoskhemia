@@ -5,10 +5,6 @@ from numpy.typing import NDArray
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
-import numpy as np
-from numpy.typing import NDArray
-
-
 from phoskhemia.data.spectrum_handlers import TransientAbsorption
 
 

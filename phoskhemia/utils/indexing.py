@@ -1,6 +1,5 @@
 import numpy as np
 from numpy.typing import NDArray
-from typing import Literal
 
 def _nearest_index(axis: NDArray[np.floating], value: float) -> int:
     a = np.asarray(axis, dtype=float).reshape(-1)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import scipy as sp
-from phoskhemia.utils.typing import ArrayFloatAny
 from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.kinetics.parameterizations import simplex_weights_from_unconstrained
 
