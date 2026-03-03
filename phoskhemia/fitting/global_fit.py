@@ -356,7 +356,7 @@ def fit_global_kinetics(
         else:
             noise: NDArray[np.floating] = np.ones(n_wl, dtype=float)
 
-    elif isinstance(noise, float | int):
+    elif isinstance(noise, (float, int)):
         noise: NDArray[np.floating] = noise * np.ones(n_wl, dtype=float)
     else:
         noise: NDArray[np.floating] = np.asarray(noise, dtype=float)
