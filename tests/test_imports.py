@@ -10,3 +10,7 @@ def test_import_phoskhemia():
 ])
 def test_import_module(mod):
     importlib.import_module(mod)
+
+def test_reexported_symbols():
+    from phoskhemia import TransientAbsorption, KineticModel  # noqa: F401
+    from phoskhemia.data import TransientAbsorption as TA2  # noqa: F401
