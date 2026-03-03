@@ -904,7 +904,7 @@ class TransientAbsorption(np.ndarray):
             return _downsample_time(self, indices)
 
         else:
-            raise ValueError("aggregate must be one of 'mean' or 'none'")
+            raise ValueError("aggregate must be one of 'mean', 'median', 'min', 'max', or 'none'")
 
     # TODO - May update this to be less verbose with arguments.
     def export_csv(
