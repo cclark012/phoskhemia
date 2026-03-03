@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypedDict, Sequence
 from dataclasses import dataclass
-import math
 
 import numpy as np
 from numpy.typing import NDArray
@@ -142,7 +141,10 @@ def _kv_line(key: str, val: str, width: int, key_w: int = 22) -> str:
 def _safe_float(v) -> float | None:
     """Tries to convert to float, returning None in case of an Exception."""
     try:
-        return float(v)
+        if np.isfinite(v):
+            return float(v)
+        else:
+            return None
     except Exception:
         return None
 
@@ -356,7 +358,7 @@ def build_fit_report(
 
     #4). ---- Fit configuration ----
     if style in {"technical", "journal", "verbose"}:
-        rows: list[str] = []
+        rows: list[ReportRow] = []
         lam: float | None = result._cache.get("lam", None)
         if lam is not None:
             rows.append(ReportRow("Tikhonov λ", _fmt_float(float(lam), digits)))
