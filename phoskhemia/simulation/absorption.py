@@ -12,7 +12,6 @@ def dho_absorption(
         summations: int=10
     ) -> NDArray[np.floating]:
 
-
     plancks: float = 6.62607015e-34
     speed_of_light: float = 299792458.0
     charge: float = 1.602176634e-19
@@ -24,8 +23,8 @@ def dho_absorption(
     sigma: float = (sigma_wn * plancks * speed_of_light * 100) / charge
 
     m: NDArray[np.int64] = np.arange(0, summations, 1, dtype=np.int64)[:, None]
-    franck_condon_factor: NDArray[np.floating] = (
-        ((huang_rhys_factor ** m) * np.exp(-huang_rhys_factor)) / np.exp(gammaln(m))
+    franck_condon_factor: NDArray[np.floating] = np.exp(
+        (m * np.log(huang_rhys_factor) - huang_rhys_factor) - gammaln(m+1)
     )
     progression: NDArray[np.floating] = (
         np.exp(-((zero_phonon + m * displacement - mu) ** 2) / (2 * (sigma ** 2)))
