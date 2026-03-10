@@ -210,6 +210,7 @@ class TransientAbsorption(np.ndarray):
         object.__setattr__(obj, "y", y)
         meta: MetaDict = MetaDict.coerce(meta or {})
         object.__setattr__(obj, "meta", meta)
+        object.__setattr__(obj, "freeze_axes", bool(freeze_axes))
 
         # One last validation
         if obj.ndim != 2:
@@ -887,6 +888,9 @@ class TransientAbsorption(np.ndarray):
         from phoskhemia.preprocessing.downsampling import downsample_time as _downsample_time
         indices = make_time_indices(self.y, method=method, **kwargs)
         if method == "linear":
+            if kwargs.get("stride") is None or kwargs.get("stride") == 0:
+                raise ValueError("stride must be specified for method='linear'")
+
             binsize: int = kwargs.get("stride")
             scaling: float = 1 / np.sqrt(np.abs(binsize))
 
