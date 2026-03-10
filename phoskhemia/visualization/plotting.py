@@ -84,7 +84,9 @@ def plot_ta(
     arr, times = _decimate_time(arr=arr, times=times, max_points=max_points, time_scale=time_scale)
     
     if np.any(times <= 0) and time_scale == 'log':
-        raise ValueError("time_scale='log' requires all times > 0. Use 'symlog' or truncate/shift time.")
+        pos: int = np.argmin(np.abs(times)) + 1
+        times = times[pos:]
+        arr = arr[pos:, :]
     
     if fast:
         X = _edges(waves)
