@@ -4,44 +4,90 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
-Changes before and including 0.1.5 were not well documented other than with git commits. As of [2026-03-02], not all changes have been included in this document.
+Changes before and including 0.1.6 were not well documented other than with git commits. As of [2026-03-20], not all changes have been included in this document.
 
-## [0.1.5] - [Unreleased]
+Everything is subject to change, so I cannot guarantee that all functions and modules will act the same in the future.
+
+## [0.1.6] - [Unreleased]
+
+### Added
+
+- CHANGELOG.md
+  - A changelog to keep track of new, changed, fixed, and removed features
+
+- fitting/solvers.py
+  - Support for solvers other than odrpack
+
+- utils
+  - formatting.py
+    - User-facing information formatters
+  - performance.py
+    - Performance measurements
+
+- `Spectrum1D` base class for single-spectrum 1D data with wavelength axis and metadata.
+- `FluorescenceSpectrum` and `AbsorptionSpectrum` spectrum handlers.
+- `SpectrumCollection`, `FluorescenceCollection`, and `AbsorptionCollection` for multi-spectrum datasets.
+- `load_absorption_collection()` parser for multi-series absorption CSV files with heterogeneous wavelength grids and mixed units.
+
+### Changed
+
+### Fixed
+
+### Deprecated
+
+
+## [0.1.5] - 2026-02-17
 
 ### Added
 
 - simulation Module
   - absorption.py
+    - Various models for absorption spectra
   - lineshapes.py
+    - Probability distributions to emulate spectral broadening
   - noise.py
+    - Functions used to emulate sources and distributions of noise
   - sources.py
+    - Simulated properties of light sources
   - transient_absorption.py
+    - Simulate transient absorption spectra with chosen spectral and temporal profiles
 
 - data Module
   - io.py
+    - File and data input/output
   - meta.py
+    - Metadata handlers
 
 - fitting Module
   - results.py
-  - solvers.py
+    - Results and functions to aid in interpretability or saving
   - reconstructions.py
+    - Functions used to reconstruct fits from previous results
 
 - kinetics Module
   - parameterization.py
+    - Estimators for fitting functions
 
 - preprocessing Module
   - downsampling.py
+    - Downsampling schemes to reduce the size of data
   - svd_denoise.py
+    - Various SVD-related denoising schemes
   - svd_ek.py
+    - SVD reconstruction based on Epps and Krivitzky 2019
 
 - utils Module
   - indexing.py
-  - performance.py
+    - Utilities to find data easily
 
 - visualization Module
   - colormaps.py
+    - Functions to make and sample colormaps
+  - plotting.py
+    - Pre-defined plots
 
 - TransientAbsorption.export_csv for exporting traces/spectra/slices to CSV (wide/long) with size guards.
+- GlobalFitResults has several helper functions to create fit summaries and save fitting results
 
 ### Changed
 
@@ -94,8 +140,6 @@ Changes before and including 0.1.5 were not well documented other than with git 
   - initialization.py
   - projections.py
   - validation.py
-
-- visualization/plotting.py
 
 ### Changed
 
