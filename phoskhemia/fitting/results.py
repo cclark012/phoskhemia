@@ -886,10 +886,27 @@ def render_latex_report(
     """
     Render blocks as a LaTeX longtable suitable for journal SI sections.
 
-    The output is a self-contained ``longtable`` environment with one
-    section header per ReportBlock.  Blank-key rows (used as separators
-    in the verbose covariance block) are silently skipped.
+    The output is a ``longtable`` fragment intended to be embedded in an
+    existing ``.tex`` document.  It is **not** a standalone compilable file.
+    The host document must load the following packages in its preamble::
+
+        \\usepackage{longtable}
+        \\usepackage{booktabs}   % \\toprule, \\midrule, \\bottomrule
+
+    Blank-key rows (used as separators in the verbose covariance block)
+    are silently skipped.
+
+    .. warning::
+        Built-in kinetic models (e.g. ``ExponentialModel``, ``TTAKineticModel``)
+        use Unicode characters in their parameter names (τ, β, χ, etc.) for
+        terminal display.  Plain LaTeX (without ``\\usepackage{inputenc}`` /
+        ``\\usepackage{fontenc}`` or a Unicode-aware engine such as XeLaTeX or
+        LuaLaTeX) cannot compile these characters and will raise an error.
+        A ``UserWarning`` is issued at runtime when Unicode is detected in the
+        block content.  Future versions will expose ``param_names_latex()`` on
+        ``KineticModel`` to provide ASCII/math-mode alternatives.
     """
+    import warnings
 
     def _tex_escape(s: str) -> str:
         """Minimal escaping of characters that break LaTeX in tabular content."""
@@ -906,6 +923,29 @@ def render_latex_report(
             .replace("~", r"\textasciitilde{}")
             .replace("<", r"\textless{}")
             .replace(">", r"\textgreater{}")
+        )
+    # Detect non-ASCII content across all block rows and warn once.
+    unicode_found: list[str] = []
+    for block in blocks:
+        for row in block.rows:
+            for text in (row.key, row.value):
+                non_ascii = [c for c in text if ord(c) > 127]
+                if non_ascii:
+                    chars = "".join(dict.fromkeys(non_ascii))  # deduplicated, order-preserved
+                    unicode_found.append(f"{chars!r} in {text!r}")
+    if unicode_found:
+        sample = "; ".join(unicode_found[:3])
+        suffix = f" (and {len(unicode_found) - 3} more)" if len(unicode_found) > 3 else ""
+        warnings.warn(
+            f"render_latex_report: non-ASCII characters detected in report content "
+            f"({sample}{suffix}). "
+            "Standard pdflatex will fail to compile these. Sources include built-in "
+            "diagnostic labels (χᵥ², R², λ) and any Unicode parameter names from the "
+            "kinetic model. Use XeLaTeX/LuaLaTeX with \\usepackage{fontspec}, or "
+            "override param_names() on your KineticModel to return ASCII/math-mode "
+            "strings for LaTeX output.",
+            UserWarning,
+            stacklevel=2,
         )
 
     lines: list[str] = [
