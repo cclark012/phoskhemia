@@ -1381,13 +1381,4 @@ class TransientAbsorption(np.ndarray):
                 f"Increase max_mb or set force=True to override."
             )
 
-def as_ta(
-        arr: NDArray[np.floating],
-        *,
-        x: NDArray[np.floating] | None = None,
-        y: NDArray[np.floating] | None = None,
-        meta: dict[str, Any] | None = None,
-        freeze_axes: bool = True,
-        dtype: type = float,
-    ) -> TransientAbsorption:
-    return TransientAbsorption(arr, x=x, y=y, meta=meta, freeze_axes=freeze_axes, dtype=dtype)
+

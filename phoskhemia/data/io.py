@@ -103,3 +103,15 @@ def _read_mat_v73(path: str) -> dict[str, Any]:
         for k in f.keys():
             out[k] = np.array(f[k])
     return out
+
+def as_ta(
+        arr: NDArray[np.floating],
+        *,
+        x: NDArray[np.floating] | None = None,
+        y: NDArray[np.floating] | None = None,
+        meta: dict[str, Any] | None = None,
+        freeze_axes: bool = True,
+        dtype: type = float,
+    ) -> TransientAbsorption:
+    return TransientAbsorption(arr, x=x, y=y, meta=meta, freeze_axes=freeze_axes, dtype=dtype)
+
