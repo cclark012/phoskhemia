@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 
 from phoskhemia.fitting.results import GlobalFitResult
 if TYPE_CHECKING:
-    from phoskhemia.data.spectrum_handlers import TransientAbsorption
+    from phoskhemia.data.spectrum2d import TransientAbsorption
 
 def reconstruct_fit(
         result: GlobalFitResult,
@@ -34,7 +34,7 @@ def reconstruct_fit(
 
     data: NDArray[np.floating] = traces @ amplitudes.T        # (n_times, n_wl)
 
-    from phoskhemia.data.spectrum_handlers import TransientAbsorption
+    from phoskhemia.data.spectrum2d import TransientAbsorption
     return TransientAbsorption(
         data,
         x=wavelengths,
@@ -82,7 +82,7 @@ def reconstruct_species(
 
     data: NDArray[np.floating] = np.outer(traces[:, idx], amplitudes[:, idx])
 
-    from phoskhemia.data.spectrum_handlers import TransientAbsorption
+    from phoskhemia.data.spectrum2d import TransientAbsorption
     return TransientAbsorption(
         data,
         x=wavelengths,

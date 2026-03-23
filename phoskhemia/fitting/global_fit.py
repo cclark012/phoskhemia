@@ -19,7 +19,7 @@ from phoskhemia.fitting.validation import compute_diagnostics
 from phoskhemia.fitting.results import GlobalFitResult
 from phoskhemia.data.meta import MetaDict
 if TYPE_CHECKING:
-    from phoskhemia.data.spectrum_handlers import TransientAbsorption
+    from phoskhemia.data.spectrum2d import TransientAbsorption
 
 
 def _z_from_ci_level(ci_level: float) -> float:

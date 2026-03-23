@@ -9,7 +9,7 @@ from scipy.sparse.linalg import spsolve
 # from scipy.linalg import cholesky
 from scipy.special import expit
 from phoskhemia.utils.typing import ArrayFloatAny
-from phoskhemia.data.spectrum_handlers import TransientAbsorption
+from phoskhemia.data.spectrum2d import TransientAbsorption
 from phoskhemia.data.meta import MetaDict, meta_copy_update
 
 def whittaker_smoother(

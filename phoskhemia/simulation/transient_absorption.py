@@ -5,7 +5,7 @@ from numpy.typing import NDArray
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
-from phoskhemia.data.spectrum_handlers import TransientAbsorption
+from phoskhemia.data.spectrum2d import TransientAbsorption
 
 
 SpectrumFn = Callable[[NDArray[np.floating]], NDArray[np.floating]]

@@ -9,7 +9,7 @@ from matplotlib.colors import Colormap
 from matplotlib import rcParams
 import numpy as np
 from numpy.typing import NDArray
-from phoskhemia.data.spectrum_handlers import TransientAbsorption
+from phoskhemia.data.spectrum2d import TransientAbsorption
 from phoskhemia.fitting.results import GlobalFitResult
 from phoskhemia.fitting.reconstructions import reconstruct_fit
 

@@ -3,7 +3,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from phoskhemia.data.spectrum_handlers import TransientAbsorption
+from phoskhemia.data.spectrum2d import TransientAbsorption
 from phoskhemia.data.meta import MetaDict, meta_copy_update
 
 def time_indices_uniform(n: int, *, stride: int) -> NDArray[np.int64]:
