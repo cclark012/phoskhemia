@@ -435,7 +435,6 @@ def fit_global_kinetics(
         weight_x=weight_x,
         weight_y=weight_y,
         maxit=maxit,
-        report="none",
         **kwargs
     )
 
