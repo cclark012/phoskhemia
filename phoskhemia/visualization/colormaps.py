@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import NDArray
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
 from matplotlib.colors import LinearSegmentedColormap
 
 nodes: list[float] = [0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0]
@@ -44,3 +46,26 @@ def plot_linearmap(cmap):
     ax.set_xlabel('index')
     ax.set_ylabel('RGB')
     plt.show()
+
+def sample_colormap(
+        n_colors: int, 
+        colormap: str = 'rainbow_r',
+        interval: tuple[float, float] = (0.0, 1.0)
+    ) -> NDArray[np.floating]:
+    if len(interval) != 2:
+        raise ValueError("interval must be a two-tuple")
+    if interval[0] < 0 or interval[1] > 1 or interval[0] > interval[1]:
+        raise ValueError("interval must be between 0 and 1 and in increasing order")
+
+    cmap: mpl.cm.ColormapRegistry = mpl.colormaps[colormap]
+    colors: NDArray[np.floating] = cmap(np.linspace(interval[0], interval[1], n_colors))
+    return colors
+
+class MidpointNormalize(Normalize):
+    def __init__(self, vmin=None, vmax=None, midpoint=None, clip=False):
+        self.midpoint = midpoint
+        super().__init__(vmin, vmax, clip)
+
+    def __call__(self, value, clip=None):
+        x, y = [self.vmin, self.midpoint, self.vmax], [0, 0.5, 1]
+        return np.ma.masked_array(np.interp(value, x, y))
