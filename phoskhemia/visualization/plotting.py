@@ -205,6 +205,7 @@ def plot_trace(
         time_scale: Literal['log', 'linear', 'symlog'] = 'log',
         ax: Axes | None = None,
         method: Literal['nearest', 'interp'] = 'nearest',
+        normalize: bool | float = False,
         **kwargs,
     ) -> Axes:
 
@@ -212,6 +213,12 @@ def plot_trace(
         _, ax = plt.subplots()
     
     trace: NDArray[np.floating] = ta.trace(wavelength, method=method)
+
+    if normalize:
+        if isinstance(normalize, bool):
+            trace /= np.max(np.abs(trace)) if time_scale != 'log' else np.max(np.abs(trace[ta.y > 0]))
+        else:
+            trace /= normalize
 
     ax.plot(ta.y, trace, **kwargs)
 
@@ -227,6 +234,7 @@ def plot_spectrum(
         ax: Axes | None = None,
         method: Literal['nearest', 'interp'] = 'nearest',
         aggregate: int = 0,
+        normalize: bool | float = False,
         **kwargs
     ) -> Axes:
     
@@ -234,6 +242,12 @@ def plot_spectrum(
         fig, ax = plt.subplots()
 
     spectrum: NDArray[np.floating] = ta.spectrum(time, method=method, aggregate=aggregate)
+    if normalize:
+        if isinstance(normalize, bool):
+            spectrum /= np.max(np.abs(spectrum))
+        else:
+            spectrum /= normalize
+
     ax.plot(ta.x, spectrum, **kwargs)
     
     return ax
