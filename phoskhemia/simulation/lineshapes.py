@@ -27,7 +27,7 @@ def voigt(
     return np.real(wofz(z)) / (sigma * np.sqrt(2 * np.pi))
 
 # TODO - Add other lineshapes. Add Franck-Condon factors for other transitions.
-def dho_absorption(
+def displaced_harmonic_oscillator(
         wavelengths_nm: NDArray[np.floating], 
         huang_rhys_factor: float=1.0,
         lam00_nm: float=400.0, 
@@ -37,7 +37,8 @@ def dho_absorption(
         summations: int=10,
         amplitude: float = 1,
         normalize: bool = False,
-        lineshape: Literal["gaussian", "lorentzian"] = "gaussian"
+        lineshape: Literal["gaussian", "lorentzian"] = "gaussian",
+        process: Literal["absorption", "emission"] = "absorption"
     ) -> NDArray[np.floating]:
     """
     Generates a molecular absorption spectrum based on the displaced harmonic oscillator (DHO) model.
@@ -71,17 +72,22 @@ def dho_absorption(
         the maximum to the value of amplitude. By default False.
     lineshape : Literal["gaussian", "lorentzian"], optional
         Lineshape to use for the progression, by default "gaussian".
+    process : Literal["absorption", "emission"], optional
+        Photophysical process to be modelled, by default "absorption".
 
     Returns
     -------
     NDArray[np.floating]
-        The calculated spectrum.
+        The calculated spectrum in the wavelength representation.
 
     Raises
     ------
     ValueError
         If an unrecognized value is passed to lineshape.
     """
+
+    if process not in ["absorption", "emission"]:
+        raise ValueError("process must be either absorption or emission")
 
     wavelengths_nm = np.asarray(wavelengths_nm, dtype=float)
 
@@ -103,24 +109,34 @@ def dho_absorption(
     )
 
     # Calculate each peak in the progression assuming some distribution.
+    sign = 1 if process == "absorption" else -1 # Reverse progression if process is emission
     if lineshape == "gaussian":
         progression: NDArray[np.floating] = (
-            np.exp(-((lam00 + m * displacement - lam) ** 2) / (2 * (sigma ** 2)))
+            np.exp(-((lam00 + sign * m * displacement - lam) ** 2) / (2 * (sigma ** 2)))
         )
     elif lineshape == "lorentzian":
         progression: NDArray[np.floating] = (
-            (1 / np.pi) * (sigma / ((lam00 + m * displacement - lam) ** 2 + sigma ** 2))
+            (1 / np.pi) * (sigma / ((lam00 + sign * m * displacement - lam) ** 2 + sigma ** 2))
         )
     else:
         raise ValueError("lineshape must be either gaussian or lorentzian")
 
-    # Weight each peak by their wavenumber (according to Einstein coefficients) and Franck-Condon factors.
-    abs_indiv: NDArray[np.floating] = (
-        (1e7 / wavelengths_nm) * franck_condon_factor * progression
+    # Weight each peak by their wavenumber ṽ (according to Einstein coefficients) and Franck-Condon factors.
+    # Emission process is also additionally modified by the nonlinear energy of each counting bin.
+    # For absorption, a(ṽ) ⋅ ṽ = A(ṽ) = A(λ),and for emission, f(ṽ) ⋅ ṽ³ = F(ṽ) = F(λ) ⋅ λ².
+    # x(ṽ) is the lineshape/transition dipole representation (directly proportional to populations).
+    # X(ṽ) and X(λ) are the wavenumber and wavelength representations, respectively.
+    nu: NDArray[np.floating] = 1e7 / wavelengths_nm
+    prefactor: NDArray[np.floating] = (
+        nu if process == "absorption" 
+        else (nu ** 3) / (wavelengths_nm ** 2)
+    )
+    indiv: NDArray[np.floating] = (
+        prefactor * franck_condon_factor * progression
     )
 
     # Final spectral shape is the sum of all contributions.
-    spectrum: NDArray[np.floating] = np.sum(abs_indiv, axis=0)
+    spectrum: NDArray[np.floating] = np.sum(indiv, axis=0)
 
     # Normalize maximum to 1 if requested.
     if normalize:
