@@ -252,14 +252,3 @@ def plot_spectrum(
     
     return ax
 
-if __name__ == "__main__":
-    np.show_runtime()
-    rng = np.random.default_rng()
-    array = rng.normal(0, 1, (123456, 100))
-    times = np.arange(1, array.shape[0]+1)
-    waves = np.arange(1, array.shape[1]+1)
-    array2 = rng.normal(0, 1, (123456, 100))
-    arr = TransientAbsorption(array, waves, times)
-    fit = TransientAbsorption(array2, waves, times)
-    plot = plot_fit(arr)
-    plt.show()
