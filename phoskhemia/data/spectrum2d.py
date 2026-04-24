@@ -1351,6 +1351,73 @@ class TransientAbsorption(np.ndarray):
 
         raise ValueError("method must be 'nearest' or 'interp'")
     
+    def trim(
+            self,
+            axis: Literal["x", "y", "wavelength", "time", "rows", "cols", 0, 1],
+            new_range: float | int | tuple[float | int, float | int]
+        ) -> TransientAbsorption:
+
+        data = np.asarray(self, dtype=float)
+        x = np.asarray(self.x, dtype=float)
+        y = np.asarray(self.y, dtype=float)
+        
+        if axis == "x" or axis == "wavelength" or axis == "cols" or axis == 1:
+            if isinstance(new_range, (int, float)):
+                if new_range > x[-1]:
+                    raise ValueError("new_range cannot be larger than the largest wavelength")
+
+                start: int = 0
+                end: int = np.argmin(np.abs(x - new_range))
+
+            elif isinstance(new_range, (tuple, list)):
+                if new_range[0] > new_range[1]:
+                    raise ValueError("new_range must be in ascending order")
+                elif new_range[0] == new_range[1]:
+                    raise ValueError("Both values of new_range are the same. Use the trace method for single wavelengths")
+                if new_range[0] < x[0] or new_range[1] > x[-1]:
+                    raise ValueError("new_range cannot have values outside the range of wavelengths")
+                
+                start: int = np.argmin(np.abs(x - new_range[0]))
+                end: int = np.argmin(np.abs(x - new_range[1]))
+
+            meta: MetaDict = meta_copy_update(getattr(self, "meta", None), {"axis": axis, "trimmed": True, "old_range": (x[0], x[-1])})
+            if getattr(meta, "noise_t0", None) is not None:
+                meta.noise_t0 = meta.noise_t0[start:end]
+
+            if getattr(meta, "probe_transmittance", None) is not None:
+                meta["probe_transmittance"] = meta["probe_transmittance"][start:end]
+            
+            new_x = x[start:end]
+            new_data = data[:, start:end]
+            return TransientAbsorption(new_data, x=new_x, y=y, meta=meta)
+
+        elif axis == "y" or axis == "time" or axis == "rows" or axis == 0:
+            if isinstance(new_range, (int, float)):
+                if new_range > y[-1]:
+                    raise ValueError("new_range cannot be larger than the largest time delay")
+                
+                start: int = 0
+                end: int = np.argmin(np.abs(y - new_range))
+                
+            elif isinstance(new_range, (tuple, list)):
+                if new_range[0] > new_range[1]:
+                    raise ValueError("new_range must be in ascending order")
+                elif new_range[0] == new_range[1]:
+                    raise ValueError("Both values of new_range are the same. Use the spectrum method for single time delays")
+                if new_range[0] < y[0] or new_range[1] > new_range[-1]:
+                    raise ValueError("new_range cannot have values outside the range of time delays")
+                
+                start: int = np.argmin(np.abs(y - new_range[0]))
+                end: int = np.argmin(np.abs(y - new_range[1]))
+                
+            meta: MetaDict = meta_copy_update(getattr(self, "meta", None), {"axis": axis, "trimmed": True, "old_range": (y[0], y[-1])})
+            new_y = y[start:end]
+            new_data = data[start:end, :]
+            return TransientAbsorption(new_data, x=x, y=new_y, meta=meta)
+
+        else:
+            raise ValueError("axis must be one of 'x', 'y', 'wavelength', 'time', 'rows', cols', 0, or 1")
+    
     @classmethod
     def from_arrays(
             cls,
