@@ -71,6 +71,62 @@ class TriexponentialModel(KineticModel):
     def parameterization(self):
         return "log"
 
+class TetraexponentialModel(KineticModel):
+    """
+    Tetra-exponential model.
+    """
+    def n_params(self):
+        return 7
+
+    def param_names(self):
+        return ["τ₁", "τ₂", "τ₃", "τ₄", "α", "β", "γ"]
+
+    def species_names(self):
+        return "[³A*]"
+
+    def solve(self, times, beta):
+        tau1, tau2, tau3, tau4 = np.exp(beta[:4])
+        w1, w2, w3, w4 = simplex_weights_from_unconstrained(beta[4:], k=4)
+        
+        a_star = w1 * np.exp(-times / tau1) + w2 * np.exp(-times / tau2) + w3 * np.exp(-times / tau3) + w4 * np.exp(-times / tau4)
+        return np.atleast_2d(a_star).T
+    
+    def parameterization(self):
+        return "log"
+
+class NexponentialModel(KineticModel):
+
+    def __init__(self, n: int = 2):
+        n = int(n)
+        if n <= 0:
+            raise ValueError("n must be a positive integer")
+        if n > 9:
+            raise ValueError("exponential with more than 9 components are not currently supported")
+
+        self.n = n
+        self.parameters = 2 * n - 1
+    
+    def n_params(self):
+        return self.parameters
+    
+    def param_names(self):
+        params = ["τ₁"]
+        params.extend([("τ" + str(i)).replace(str(i), f"{chr(int(f"208{i}", 16))}") for i in range(2, self.n + 1)])
+        params.extend([(str(i)).replace(str(i), f"{chr(int(f"03B{i}", 16))}") for i in range(1, self.n)])
+        return params
+
+    def species_names(self):
+        return "[³A*]"
+    
+    def solve(self, times, beta):
+        taus = np.exp(beta[:self.n])
+        ws = simplex_weights_from_unconstrained(beta[self.n:], k=self.n)
+        a_star = np.sum(ws[:, None] * np.exp(-times / taus[:, None]), axis=0)
+        return a_star
+    
+    def parameterization(self):
+        return "log"
+
 class TTAKineticModel(KineticModel):
     """
     Triplet–triplet annihilation kinetic model.
