@@ -1,4 +1,7 @@
 from __future__ import annotations
+from time import perf_counter_ns
+import numpy as np
+from numpy.typing import NDArray
 
 def estimate_csv_bytes(n_rows: int, n_cols: int, *, chars_per_value: int = 20, delimiter: str = ",") -> int:
     """
@@ -25,3 +28,39 @@ def format_bytes(n: int) -> str:
         n /= 1024.0
         i += 1
     return f"{n:.1f} {units[i]}"
+
+def format_value(val: float, timing: bool = False) -> tuple[str, str]:
+    start: int = perf_counter_ns()
+    # SI metric prefixes
+    prefixes: NDArray[np.str_] = np.asarray([
+        "q", "r", "y", 
+        "z", "a", "f", 
+        "p", "n", "μ", 
+        "m", " ", "k", 
+        "M", "G", "T", 
+        "P", "E", "Z", 
+        "Y", "R", "Q"
+    ])
+
+    exponent: NDArray[np.floating] | float = np.log10(val) // 3
+    idx: NDArray[np.int64] | int = (exponent + 10).astype(np.int64)
+    # Values below 10⁻³⁰ or above 10³⁰ don't have standard prefixes
+    # Could use combinations of prefixes, but not doing that for now
+
+    if np.size(val) > 1:
+        mask: NDArray[np.bool_] = np.logical_or(idx < 0, idx > 20)
+        idx[mask] = 10
+    elif idx < 0 or idx > 20:
+        idx = 10
+
+    # Normalize all values to [1, 1000)
+    norm: NDArray[np.str_] = np.round(val / (10 ** (exponent * 3)), 2).astype(dtype=np.str_)
+    # norm: NDArray[np.str_] = np.round(val / (10 ** (exponent * 3)), 2)
+    # norm = np.asarray([f"{n :>6.2f}" for n in norm], dtype=np.str_)
+    # Associated prefix for value
+    prefix: NDArray[np.str_] | str = prefixes[idx]
+
+    end: int = perf_counter_ns()
+    print(f"{(end - start) * 1e-3 :.2f} μs") if timing else None
+
+    return norm, prefix
