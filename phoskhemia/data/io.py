@@ -41,6 +41,8 @@ def load_mat(
         gui: bool = False,
         meta: Mapping[str, Any] | None = None,
         store_probe_row: bool = True,
+        freeze_axes: bool = True,
+        dtype: type = float,
     ) -> TransientAbsorption:
 
     if path is None:
@@ -76,7 +78,7 @@ def load_mat(
     if store_probe_row:
         m["probe_transmittance"] = probe
 
-    return TransientAbsorption(data, x=wl, y=times, meta=m)
+    return TransientAbsorption(data, x=wl, y=times, meta=m, freeze_axes=freeze_axes, dtype=dtype)
 
 
 def _infer_single_matrix_key(d: Mapping[str, Any]) -> str:
