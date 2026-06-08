@@ -122,7 +122,7 @@ class NexponentialModel(KineticModel):
         taus = np.exp(beta[:self.n])
         ws = simplex_weights_from_unconstrained(beta[self.n:], k=self.n)
         a_star = np.sum(ws[:, None] * np.exp(-times / taus[:, None]), axis=0)
-        return a_star
+        return np.atleast_2d(a_star).T
     
     def parameterization(self):
         return "log"
