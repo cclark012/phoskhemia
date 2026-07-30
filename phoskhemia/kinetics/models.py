@@ -95,7 +95,7 @@ class TetraexponentialModel(KineticModel):
         return "log"
 
 class NexponentialModel(KineticModel):
-
+    # TODO - Allow n > 9 (even though that is likely unrealistic in real scenarios)
     def __init__(self, n: int = 2):
         n = int(n)
         if n <= 0:
@@ -120,8 +120,11 @@ class NexponentialModel(KineticModel):
     
     def solve(self, times, beta):
         taus = np.exp(beta[:self.n])
-        ws = simplex_weights_from_unconstrained(beta[self.n:], k=self.n)
-        a_star = np.sum(ws[:, None] * np.exp(-times / taus[:, None]), axis=0)
+        if self.n > 1:
+            ws = simplex_weights_from_unconstrained(beta[self.n:], k=self.n)
+            a_star = np.sum(ws[:, None] * np.exp(-times / taus[:, None]), axis=0)
+        else:
+            a_star = np.exp(-times / taus)
         return np.atleast_2d(a_star).T
     
     def parameterization(self):
