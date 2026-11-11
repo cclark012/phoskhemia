@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import copy
 import csv
 from pathlib import Path
-from typing import Callable, Any, Literal, TYPE_CHECKING
+from typing import Any, Literal, TYPE_CHECKING
 import warnings
 
 import numpy as np
 from numpy.typing import NDArray
-from phoskhemia.data.meta import MetaDict, meta_copy_update
+from phoskhemia.data.meta import MetaDict, meta_copy_update, subset_meta
 from phoskhemia.utils.indexing import _nearest_index
 
 if TYPE_CHECKING:
@@ -64,64 +63,6 @@ class TransientAbsorption(np.ndarray):
     """ Dictionary of other metadata.
     """
 
-
-    _SUPPORTED_ARRAY_FUNCTIONS: set = {
-        np.all,
-        np.any,
-        np.atleast_1d,
-        np.atleast_2d,
-        np.atleast_3d,
-        np.argmax,
-        np.argmin,
-        np.argpartition,
-        np.argsort,
-        np.astype,
-        np.choose,
-        np.clip,
-        np.compress,
-        np.concatenate,
-        np.conj,
-        np.conjugate,
-        np.copy,
-        np.cumprod,
-        np.cumsum,
-        np.diagonal,
-        np.dot,
-        np.histogram,
-        np.hstack,
-        np.max,
-        np.mean,
-        np.min,
-        np.nanargmax,
-        np.nanargmin,
-        np.nanmax,
-        np.nanmean,
-        np.nanmedian,
-        np.nanmin,
-        np.nanstd,
-        np.nanvar,
-        np.ndim,
-        np.nonzero,
-        np.partition,
-        np.prod,
-        np.put,
-        np.ravel,
-        np.repeat,
-        np.reshape,
-        np.resize,
-        np.round,
-        np.searchsorted,
-        np.sort,
-        np.squeeze,
-        np.std,
-        np.sum,
-        np.swapaxes,
-        np.take,
-        np.trace,
-        np.transpose,
-        np.var,
-        np.vstack,
-    }
 
     def __new__(
             cls, 
@@ -193,8 +134,8 @@ class TransientAbsorption(np.ndarray):
         if y is None:
             y: NDArray[np.floating] = np.arange(nrows, dtype=float)
 
-        x: NDArray[np.floating] = np.asarray(x, dtype=float)
-        y: NDArray[np.floating] = np.asarray(y, dtype=float)
+        x: NDArray[np.floating] = np.array(x, dtype=float, copy=True)
+        y: NDArray[np.floating] = np.array(y, dtype=float, copy=True)
         if freeze_axes:
             x.flags.writeable = False
             y.flags.writeable = False
@@ -208,7 +149,7 @@ class TransientAbsorption(np.ndarray):
 
         object.__setattr__(obj, "x", x)
         object.__setattr__(obj, "y", y)
-        meta: MetaDict = MetaDict.coerce(meta or {})
+        meta: MetaDict = meta_copy_update(meta)
         object.__setattr__(obj, "meta", meta)
         object.__setattr__(obj, "freeze_axes", bool(freeze_axes))
 
@@ -246,328 +187,169 @@ class TransientAbsorption(np.ndarray):
         # Non-TransientAbsorption (scalar or ndarray)
         if not isinstance(other, TransientAbsorption):
             try:
-                res: NDArray[np.floating] = np.asarray(np.asarray(self) + other)
-                out: TransientAbsorption = res.view(TransientAbsorption)
-                object.__setattr__(out, "x", copy.copy(self.x))
-                object.__setattr__(out, "y", copy.copy(self.y))
-                object.__setattr__(out, "meta", copy.copy(self.meta))
-                return out
-
-            except Exception:
+                return np.add(self, other)
+            except TypeError:
                 return NotImplemented
 
         # Both TransientAbsorption -> default average
         return self.combine(other, fill_val=None, mode="average")
 
-    def __array_function__(
-        self,
-        func: Callable[..., Any],
-        types: tuple[type, ...],
-        args: tuple[Any, ...],
-        kwargs: dict[str, Any] | None,
-    ) -> Any:
-        """_summary_
+    def __array_function__(self, func, types, args, kwargs):
+        """Use NumPy semantics and preserve coordinates only for safe operations.
 
-        Parameters
-        ----------
-        func : Callable[..., Any]
-            _description_
-        types : tuple[type, ...]
-            _description_
-        args : tuple[Any, ...]
-            _description_
-        kwargs : dict[str, Any] | None
-            _description_
-
-        Returns
-        -------
-        Any
-            _description_
-
-        Raises
-        ------
-        NotImplemented
+        Shape-changing operations and reductions return ordinary arrays/scalars.
+        Nested arguments are converted too (notably concatenate/stack inputs).
         """
-
-        if func not in TransientAbsorption._SUPPORTED_ARRAY_FUNCTIONS:
+        if not all(issubclass(t, (np.ndarray, TransientAbsorption)) for t in types):
             return NotImplemented
 
-        # Convert TransientAbsorption in args to ndarray and remember inputs
-        numeric_args: list = []
-        TransientAbsorption_inputs: list = []
-        for a in args:
-            if isinstance(a, TransientAbsorption):
-                numeric_args.append(np.asarray(a))
-                TransientAbsorption_inputs.append(a)
-            else:
-                numeric_args.append(a)
+        inputs = []
 
-        def _convert_kwval(value: Any) -> Any:
-            # Convert TransientAbsorption to ndarray
+        def convert(value):
             if isinstance(value, TransientAbsorption):
+                inputs.append(value)
                 return np.asarray(value)
-            # Check values in list/tuple and convert each item
-            elif isinstance(value, (list, tuple)):
-                t: type = type(value)
-                return t(_convert_kwval(x) for x in value)
-            # Check values in dictionary items and convert each
-            elif isinstance(value, dict):
-                return {kk: _convert_kwval(vv) for kk, vv in value.items()}
-            # Return original value if not TransientAbsorption, list, tuple, or dict
-            else:
-                return value
+            if isinstance(value, tuple):
+                return tuple(convert(v) for v in value)
+            if isinstance(value, list):
+                return [convert(v) for v in value]
+            if isinstance(value, dict):
+                return {k: convert(v) for k, v in value.items()}
+            return value
 
-        numeric_kwargs: dict[str, Any] = {k: _convert_kwval(v) for k, v in (kwargs or {}).items()}
+        result = func(*convert(args), **convert(kwargs or {}))
+        coordinate_preserving = {
+            np.copy, np.clip, np.round, np.conj, np.conjugate,
+            np.atleast_1d, np.atleast_2d, np.cumsum, np.cumprod,
+        }
+        if (
+            func in coordinate_preserving
+            and isinstance(result, np.ndarray)
+            and result.ndim == 2
+            and result.shape == self.shape
+            and all(
+                np.array_equal(a.x, self.x) and np.array_equal(a.y, self.y)
+                for a in inputs
+            )
+        ):
+            return TransientAbsorption(
+                result, x=self.x, y=self.y, meta=meta_copy_update(self.meta),
+                freeze_axes=self.freeze_axes, dtype=result.dtype,
+            )
+        return result
 
-        # Find axis (if not provided in kwargs, try positional)
-        axis: int | tuple[int, ...] | None = kwargs.get("axis", None) if kwargs is not None else None
-        if axis is None and len(args) >= 2:
-            possible_axis: object = args[1]
-            if isinstance(possible_axis, (int, tuple, list)):
-                axis: int | tuple[int, ...] | list[int] = possible_axis
+    def __array_wrap__(self, out_arr, context=None, return_scalar=False):
+        """Keep ufunc/reduction results from acquiring invalid coordinate axes."""
+        result = np.asarray(out_arr)
+        if result.ndim == 0:
+            return result[()]
+        compatible = result.ndim == 2 and result.shape == self.shape
+        if compatible and context is not None:
+            for arg in context[1]:
+                if isinstance(arg, TransientAbsorption):
+                    compatible = compatible and (
+                        np.array_equal(arg.x, self.x)
+                        and np.array_equal(arg.y, self.y)
+                    )
+        if compatible:
+            return TransientAbsorption(
+                result, x=self.x, y=self.y, meta=meta_copy_update(self.meta),
+                freeze_axes=self.freeze_axes, dtype=result.dtype,
+            )
+        return result
 
-        # Call numpy implementation
-        result: object = func(*numeric_args, **numeric_kwargs)
+    def transpose(self, *axes):
+        """Return an ndarray: transposition swaps the physical axis roles."""
+        return np.asarray(self).transpose(*axes)
 
-        # Support functions that return tuples (e.g. returned=True)
-        returned_tuple: bool = isinstance(result, tuple)
-        results_list: list = list(result) if returned_tuple else [result]
-        wrapped_results: list = []
+    @property
+    def T(self):
+        return self.transpose()
 
-        for res in results_list:
-            # Non-array scalar -> return as-is
-            if not isinstance(res, np.ndarray):
-                wrapped_results.append(res)
-                continue
+    def swapaxes(self, axis1, axis2):
+        return np.asarray(self).swapaxes(axis1, axis2)
 
-            # Helper: normalize axis description to tuple of axes
-            def _normalize_axis(
-                    ax: int | tuple[int, ...] | list[int] | None,
-                    ndim: int
-                ) -> tuple[int, ...]:
+    def reshape(self, *shape, order="C", **kwargs):
+        return np.asarray(self).reshape(*shape, order=order, **kwargs)
 
-                if ax is None:
-                    return tuple(range(ndim))
+    def ravel(self, order="C"):
+        return np.asarray(self).ravel(order=order)
 
-                elif isinstance(ax, (list, tuple)):
-                    ax_t: tuple[int, ...] = tuple(((i + ndim) if i < 0 else i) for i in ax)
-                    return ax_t
+    def flatten(self, order="C"):
+        return np.asarray(self).flatten(order=order)
 
-                else:
-                    ax_i: int = int(ax)
-                    if ax_i < 0:
-                        ax_i = ax_i + ndim
+    def squeeze(self, axis=None):
+        return np.asarray(self).squeeze(axis=axis)
 
-                    return (ax_i,)
+    def take(self, indices, axis=None, out=None, mode="raise"):
+        return np.asarray(self).take(indices, axis=axis, out=out, mode=mode)
 
-            orig_ndim: int = self.ndim
-            reduced_axes: tuple[int, ...] = _normalize_axis(axis, orig_ndim)
-            surviving_axes: list[int] = [i for i in range(orig_ndim) if i not in reduced_axes]
+    def diagonal(self, offset=0, axis1=0, axis2=1):
+        return np.asarray(self).diagonal(offset=offset, axis1=axis1, axis2=axis2)
 
-            # Helper: find a common coordinate for axis_idx among all TransientAbsorption inputs, otherwise None
-            def _common_coord_for_axis(
-                    axis_idx: int
-                ) -> NDArray[np.floating] | None:
+    def repeat(self, repeats, axis=None):
+        return np.asarray(self).repeat(repeats, axis=axis)
 
-                # Return None if empty
-                if not TransientAbsorption_inputs:
-                    return None
+    def compress(self, condition, axis=None, out=None):
+        return np.asarray(self).compress(condition, axis=axis, out=out)
 
-                first: NDArray[np.floating] | None = getattr(TransientAbsorption_inputs[0], "x" if axis_idx == 1 else "y", None)
-                # Return None if first axis is None
-                if first is None:
-                    return None
-                for m in TransientAbsorption_inputs[1:]:
-                    other_coord = getattr(m, "x" if axis_idx == 1 else "y", None)
-                    # Return None if any axis is None
-                    if other_coord is None:
-                        return None
+    def choose(self, choices, out=None, mode="raise"):
+        return np.asarray(self).choose(choices, out=out, mode=mode)
 
-                    # Return None if axes are not equal
-                    if not np.array_equal(np.asarray(first), np.asarray(other_coord)):
-                        return None
+    def dot(self, other, out=None):
+        return np.asarray(self).dot(np.asarray(other), out=out)
 
-                # Return axis if all axes are equivalent
-                return first
+    def resize(self, *args, **kwargs):
+        raise ValueError("In-place resizing would invalidate TA axes; create a new dataset instead")
 
-            # Decide what coords survive and normalize them into the canonical types:
-            # - for 2-D result: x,y -> 1-D np.ndarray or None
-            # - for 1-D result: one surviving coord -> 1-D np.ndarray (not scalar) for convenience
-            # - for 0-D result: coords set to None (keeping NumPy scalar semantics)
-            new_x: NDArray[np.floating] | None = None
-            new_y: NDArray[np.floating] | None = None
+    def __getitem__(self, key):
+        """Slice a rectangular TA dataset together with its aligned metadata.
 
-            if res.ndim == 2:
-                cand_x: NDArray[np.floating] | None = _common_coord_for_axis(1)
-                cand_y: NDArray[np.floating] | None = _common_coord_for_axis(0)
-                new_x = np.asarray(cand_x) if cand_x is not None else None
-                new_y = np.asarray(cand_y) if cand_y is not None else None
-
-            elif res.ndim == 1:
-                if len(surviving_axes) == 1:
-                    surv: int = surviving_axes[0]
-                    # Operation preserved columns
-                    if surv == 1:
-                        cand_x: NDArray[np.floating] | None = _common_coord_for_axis(1)
-                        new_x = np.asarray(cand_x) if cand_x is not None else None
-                        new_y = None
-                    # Operation preserved rows
-                    else:
-                        cand_y: NDArray[np.floating] | None = _common_coord_for_axis(0)
-                        new_y = np.asarray(cand_y) if cand_y is not None else None
-                        new_x = None
-                else:
-                    # ambiguous -> no coords
-                    new_x = None
-                    new_y = None
-
-            elif res.ndim == 0:
-                new_x = None
-                new_y = None
-
-            # Now wrap result as TransientAbsorption and attach coords (safe types)
-            out: TransientAbsorption = res.view(TransientAbsorption)
-
-            # For 1-D results, ensure coords are 1-D arrays (not scalars) when present
-            if new_x is not None:
-                object.__setattr__(out, "x", np.asarray(new_x))
-            else:
-                object.__setattr__(out, "x", None)
-
-            if new_y is not None:
-                object.__setattr__(out, "y", np.asarray(new_y))
-            else:
-                object.__setattr__(out, "y", None)
-
-            object.__setattr__(out, "meta", self.meta)
-
-            wrapped_results.append(out)
-
-        return tuple(wrapped_results) if returned_tuple else wrapped_results[0]
-
-    def __getitem__(
-            self, 
-            key: tuple | int | slice | NDArray[np.integer] | NDArray[np.bool_]
-        ) -> TransientAbsorption:
+        Two-dimensional selections with separable time/wavelength indices remain
+        TransientAbsorption objects. Scalars, individual traces/spectra and
+        paired advanced selections follow ordinary NumPy return conventions.
         """
-        Indexing that slices data as well as x (wavelength) and y (time) values.
-
-        Handles cases where self.x or self.y may be None (e.g. after reductions).
-        Returns a TransientAbsorption view when possible; scalar results are
-        wrapped as 0-D TransientAbsorption arrays.
-
-        Parameters
-        ----------
-        key : tuple | int | slice | NDArray[np.integer] | NDArray[np.bool_]
-            Index, indices, or slice to be taken of the data.
-
-        Returns
-        -------
-        TransientAbsorption
-            The chosen data point(s) with its x and y value(s).
-
-        Raises
-        ------
-        IndexError
-            Too many indices passed for indexing raises this error.
-        """
-
-        # Normalize key into (row_idx, col_idx)
-        row_idx: int | slice | NDArray[np.integer] | NDArray[np.bool_]
-        col_idx: int | slice | NDArray[np.integer] | NDArray[np.bool_]
-        if isinstance(key, tuple):
-            if len(key) == 2:
-                row_idx, col_idx = key
-            elif len(key) == 1:
-                row_idx, col_idx = key[0], slice(None)
-            else:
-                raise IndexError("Too many indices for TransientAbsorption")
-        else:
-            row_idx, col_idx = key, slice(None)
-
-        # Perform numeric indexing
-        result: NDArray[np.floating] = super().__getitem__(key)
-
-        # Convert scalars to 0-D array so subclass is preserved
+        result = np.ndarray.__getitem__(self, key)
         if not isinstance(result, np.ndarray):
-            result: NDArray[np.floating] = np.array(result)
+            return result
+        if result.ndim != 2:
+            return np.asarray(result)
 
-        out: TransientAbsorption = result.view(TransientAbsorption)
+        indices = list(key) if isinstance(key, tuple) else [key]
+        if any(index is None for index in indices):
+            return np.asarray(result)
+        ellipses = [i for i, index in enumerate(indices) if index is Ellipsis]
+        if ellipses:
+            i = ellipses[0]
+            indices[i:i + 1] = [slice(None)] * (3 - len(indices))
+        indices += [slice(None)] * (2 - len(indices))
+        if len(indices) != 2:
+            return np.asarray(result)
+        row_index, col_index = indices
 
-        # Helper to safely slice coordinate arrays (returns None if coord is None)
-        def slice_coord(
-                coord: NDArray[np.floating] | None, 
-                idx: int | slice | NDArray[np.integer] | NDArray[np.bool_]
-            ) -> NDArray[np.floating] | None:
-
-            if coord is None or coord.ndim == 0:
+        def axis_selection(axis, index):
+            if axis is None or np.ndim(axis) != 1:
                 return None
-            # Integer index -> scalar
-            elif isinstance(idx, (int, np.integer)):
-                return coord[idx]
-            # None or full slice -> whole coord
-            elif idx is None or (isinstance(idx, slice) and idx == slice(None)):
-                return coord
-            # fancy indexing / boolean mask / slice
-            return np.asarray(coord[idx])
+            selected = np.asarray(axis)[index]
+            selected = np.asarray(selected)
+            # np.ix_ supplies (n,1) and (1,m) independent index arrays.
+            if selected.ndim == 2 and 1 in selected.shape:
+                selected = selected.reshape(-1)
+            return selected if selected.ndim == 1 else None
 
-        # Initialize new_x/new_y before use
-        new_x: NDArray[np.floating] | None = None
-        new_y: NDArray[np.floating] | None = None
+        new_y = axis_selection(self.y, row_index)
+        new_x = axis_selection(self.x, col_index)
+        if (
+            new_x is None or new_y is None
+            or result.shape != (new_y.size, new_x.size)
+        ):
+            return np.asarray(result)
 
-        ndim: int = out.ndim
-        if self._DEBUG:
-            if isinstance(key, (slice, int)):
-                key_len = 1
-            else:
-                key_len = len(key)
-            print("key:                  ", "len(key): ", "ndim: ", "row_idx: ", "col_idx: ", flush=True)
-            print(f"{str(key) :<22}", f"{str(key_len) :<10}", f"{str(ndim) :<6}", f"{str(row_idx) :<9}", f"{str(col_idx) :<9}", flush=True)
-            print(flush=True)
-
-        if ndim == 2:
-            new_x = slice_coord(self.x, col_idx)
-            new_y = slice_coord(self.y, row_idx)
-
-        elif ndim == 1:
-            # One axis survived; determine which
-            if isinstance(key, tuple):
-                # Row_idx integer -> row collapsed -> x survives
-                if isinstance(row_idx, (int, np.integer)):
-                    new_x = slice_coord(self.x, col_idx)
-                    new_y = slice_coord(self.y, row_idx)
-                # Col_idx integer -> col collapsed -> y survives
-                elif isinstance(col_idx, (int, np.integer)):
-                    new_y = slice_coord(self.y, row_idx)
-                    new_x = slice_coord(self.x, col_idx)
-                else:
-                    # e.g., arr[1:3, :] -> row slice yields 1D with x surviving
-                    if (isinstance(col_idx, slice) and col_idx == slice(None)):
-                        new_x = slice_coord(self.x, col_idx)
-                        new_y = None
-                    else:
-                        # Fallback: prefer x if it exists, else y
-                        new_x = slice_coord(self.x, col_idx) if self.x is not None else None
-                        new_y = None
-            else:
-                # Single index -> row indexing like arr[k] -> x survives
-                new_x = slice_coord(self.x, slice(None))
-                new_y = slice_coord(self.y, row_idx)
-
-        elif ndim == 0:
-            new_x = slice_coord(self.x, col_idx)
-            new_y = slice_coord(self.y, row_idx)
-
-        else:
-            # Higher dims unsupported; set coords to None
-            new_x = None
-            new_y = None
-
-        # Attach coords (may be None)
-        object.__setattr__(out, "x", new_x)
-        object.__setattr__(out, "y", new_y)
-        object.__setattr__(out, "meta", self.meta)
-        return out
+        return TransientAbsorption(
+            np.asarray(result), x=new_x, y=new_y,
+            meta=subset_meta(self.meta, self.shape, row_index, col_index),
+            freeze_axes=self.freeze_axes, dtype=result.dtype,
+        )
 
     def __radd__(
             self, 
@@ -676,6 +458,22 @@ class TransientAbsorption(np.ndarray):
         three datasets have the same stepsize.
         
 
+        Notes
+        -----
+        ``a + b`` retains its historical meaning of averaging/combining datasets;
+        use ``np.add(a, b)`` for numerical elementwise addition. For identical
+        grids, noise standard deviations of distinct inputs are propagated as
+        independent measurements: ``hypot(sigma_a, sigma_b) / 2``. Combining an
+        object with itself leaves its noise unchanged. For merged grids, noise
+        is cleared because overlap changes its time/wavelength dependence;
+        reasons are recorded in ``meta["combine_metadata_dropped"]``. Probe
+        metadata is retained only when both inputs describe the same values on
+        the unchanged wavelength axis. Coordinate comparisons are exact: this
+        routine does not perform approximate alignment or resampling. Partial
+        overlaps require increasing uniform grids with matching spacing and a
+        contiguous suffix/prefix overlap; irregular or contained overlaps raise
+        a descriptive error.
+
         Parameters
         ----------
         arr2 : TransientAbsorption
@@ -705,8 +503,6 @@ class TransientAbsorption(np.ndarray):
             A generic error occurred while trying to handle overlapping arrays.
         """
 
-        ARRAY_TOLERANCE: int = 2
-
         if not isinstance(arr2, TransientAbsorption):
             raise TypeError("combine expects another TransientAbsorption instance")
 
@@ -715,6 +511,59 @@ class TransientAbsorption(np.ndarray):
             raise ValueError(f"mode must be one of {self._COMBINE_MODES}")
 
         arr1: TransientAbsorption = self
+        same_grid = np.array_equal(arr1.x, arr2.x) and np.array_equal(arr1.y, arr2.y)
+        combined_meta = meta_copy_update(self.meta, {"combined": True, "combine_mode": mode})
+        dropped = {}
+
+        def drop_metadata(key, reason):
+            combined_meta.pop(key, None)
+            if key in arr1.meta or key in arr2.meta:
+                dropped[key] = reason
+
+        if same_grid:
+            sigma1, sigma2 = arr1.meta.get("noise_t0"), arr2.meta.get("noise_t0")
+            if sigma1 is not None and sigma2 is not None:
+                sigma1, sigma2 = np.asarray(sigma1, dtype=float), np.asarray(sigma2, dtype=float)
+                valid_shapes = ((), (self.shape[1],), self.shape)
+                if (
+                    sigma1.shape in valid_shapes and sigma2.shape in valid_shapes
+                    and np.isfinite(sigma1).all() and np.isfinite(sigma2).all()
+                    and (sigma1 >= 0).all() and (sigma2 >= 0).all()
+                ):
+                    sigma = np.array(sigma1, copy=True) if arr1 is arr2 else np.hypot(sigma1, sigma2) / 2
+                    combined_meta["noise_t0"] = float(sigma) if sigma.ndim == 0 else sigma
+                    combined_meta["combine_noise_assumption"] = (
+                        "same input object; no noise reduction" if arr1 is arr2
+                        else "independent input measurements"
+                    )
+                else:
+                    drop_metadata("noise_t0", "Input standard deviations are invalid or do not match the axes")
+            else:
+                drop_metadata("noise_t0", "Both input noise estimates are required to propagate an average")
+        else:
+            drop_metadata("noise_t0", "Merged grids need time/wavelength dependent noise propagation")
+
+        probe1, probe2 = arr1.meta.get("probe_transmittance"), arr2.meta.get("probe_transmittance")
+        if (
+            np.array_equal(arr1.x, arr2.x) and probe1 is not None and probe2 is not None
+            and np.array_equal(probe1, probe2)
+            and np.shape(probe1) in ((), (self.shape[1],))
+        ):
+            combined_meta["probe_transmittance"] = (
+                float(probe1) if np.ndim(probe1) == 0 else np.array(probe1, copy=True)
+            )
+        else:
+            drop_metadata("probe_transmittance", "Probe metadata differs, is missing, or the wavelength axis changes")
+        if dropped:
+            combined_meta["combine_metadata_dropped"] = dropped
+
+        if same_grid:
+            # Preserve measured coordinates, including irregular/log time grids.
+            return TransientAbsorption(
+                (np.asarray(arr1) + np.asarray(arr2)) / 2,
+                x=arr1.x, y=arr1.y, meta=combined_meta, freeze_axes=self.freeze_axes,
+            )
+
         intersection: NDArray[np.floating]
         idx1: NDArray[np.integer]
         idx2: NDArray[np.integer]
@@ -725,7 +574,7 @@ class TransientAbsorption(np.ndarray):
         # TODO - May refactor this part to be easier to follow and so there is not so much repetition.
         # Check which axis we are combining along and adjust order of arrays if necessary.
         # If ys match, stack x.
-        if np.array_equal(np.round(arr1.y, ARRAY_TOLERANCE), np.round(arr2.y, ARRAY_TOLERANCE)):
+        if np.array_equal(arr1.y, arr2.y):
             # Two non-overlapping, positive arrays always have positive difference 
             # for min(arr2) - max(arr1) if in the order arr1 arr2. If the arrays 
             # are in the order arr2 arr1, then min(arr2) - max(arr1) is negative 
@@ -758,13 +607,13 @@ class TransientAbsorption(np.ndarray):
             # Find if arrays overlap at all
 
             intersection, idx1, idx2 = np.intersect1d(
-                np.round(arr1.x, ARRAY_TOLERANCE), 
-                np.round(arr2.x, ARRAY_TOLERANCE), 
+                arr1.x, 
+                arr2.x, 
                 return_indices=True
             )
             diff: float = (
                 (np.max(arr2.x) - np.max(arr1.x)) 
-                if intersection.any() else (np.min(arr2.x) - np.max(arr1.x))
+                if intersection.size > 0 else (np.min(arr2.x) - np.max(arr1.x))
             )
             if diff < 0:
                 arr1, arr2 = arr2, arr1
@@ -773,15 +622,23 @@ class TransientAbsorption(np.ndarray):
             axis, ax1, ax2 = 1, arr1.x, arr2.x
 
         # If xs match, stack y.
-        elif np.array_equal(np.round(arr1.x, ARRAY_TOLERANCE), np.round(arr2.x, ARRAY_TOLERANCE)):
+        elif np.array_equal(arr1.x, arr2.x):
             intersection, idx1, idx2 = np.intersect1d(
-                np.round(arr1.y, ARRAY_TOLERANCE), 
-                np.round(arr2.y, ARRAY_TOLERANCE), 
+                arr1.y,
+                arr2.y,
                 return_indices=True
             )
+            if intersection.size == 0 and (
+                max(np.min(arr1.y), np.min(arr2.y))
+                <= min(np.max(arr1.y), np.max(arr2.y))
+            ):
+                raise ValueError(
+                    "Time ranges overlap without exact shared coordinates; "
+                    "explicitly align or resample the time grids before combining them"
+                )
             diff: float = (
                 (np.max(arr2.y) - np.max(arr1.y)) 
-                if intersection.any() else (np.min(arr2.y) - np.max(arr1.y))
+                if intersection.size > 0 else (np.min(arr2.y) - np.max(arr1.y))
             )
             if diff < 0:
                 arr1, arr2 = arr2, arr1
@@ -796,15 +653,34 @@ class TransientAbsorption(np.ndarray):
                 )
 
         # Overlapping arrays
-        if intersection.any():
-            dax1: float = float(np.mean(np.diff(ax1)))
-            dax2: float = float(np.mean(np.diff(ax2)))
-            compatible: bool = np.isclose(dax1, dax2, rtol=1e-6, atol=1e-9)
-            if not compatible:
+        if intersection.size > 0:
+            steps1, steps2 = np.diff(ax1), np.diff(ax2)
+            if (
+                steps1.size == 0 or steps2.size == 0
+                or not np.isfinite(ax1).all() or not np.isfinite(ax2).all()
+                or np.any(steps1 <= 0) or np.any(steps2 <= 0)
+                or not np.allclose(steps1, steps1[0], rtol=1e-6, atol=0.0)
+                or not np.allclose(steps2, steps2[0], rtol=1e-6, atol=0.0)
+            ):
+                raise ValueError(
+                    "Partial overlap requires strictly increasing, uniformly spaced grids; "
+                    "align irregular grids explicitly before combining them"
+                )
+            dax1, dax2 = float(steps1[0]), float(steps2[0])
+            if not np.isclose(dax1, dax2, rtol=1e-6, atol=0.0):
                 raise ValueError("Overlapping arrays with different axis spacings are not supported.")
-            
-            n_steps: int = int((np.max(ax2) - np.min(ax1)) / (0.5 * (dax1 + dax2)))
-            new_ax: NDArray[np.floating] = np.linspace(np.min(ax1), np.max(ax2), n_steps + 1)
+            if (
+                intersection.size == min(ax1.size, ax2.size)
+                or not np.array_equal(idx1, np.arange(ax1.size - intersection.size, ax1.size))
+                or not np.array_equal(idx2, np.arange(intersection.size))
+            ):
+                raise ValueError(
+                    "Contained or noncontiguous overlapping grids are not supported; "
+                    "only a suffix of the first grid overlapping a prefix of the second is supported"
+                )
+            # The guarded layout lets us preserve every measured coordinate,
+            # rather than inventing a uniform axis from floating-point spacing.
+            new_ax = np.concatenate((ax1, ax2[intersection.size:]))
 
             new_data: NDArray[np.floating] = (
                 np.zeros((len(arr1.y), len(new_ax))) 
@@ -837,8 +713,8 @@ class TransientAbsorption(np.ndarray):
                     new_data[idx_new, :] = np.average(stack, axis=0)
 
             return (
-                TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y), meta=copy.copy(self.meta)) 
-                if axis == 1 else TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax, meta=copy.copy(self.meta))
+                TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y), meta=combined_meta) 
+                if axis == 1 else TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax, meta=combined_meta)
             )
 
         # Non-overlapping arrays
@@ -854,8 +730,8 @@ class TransientAbsorption(np.ndarray):
                 new_ax: NDArray[np.floating] = comb
                 new_data: NDArray[np.floating] = np.concatenate((np.array(arr1), np.array(arr2)), axis=axis)
                 return (
-                    TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y), meta=copy.copy(self.meta)) 
-                    if axis == 1 else TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax, meta=copy.copy(self.meta))
+                    TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y), meta=combined_meta) 
+                    if axis == 1 else TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax, meta=combined_meta)
                 )
 
             # Fill values between arrays with fill_value using the average stepsize of the two axes.
@@ -867,15 +743,14 @@ class TransientAbsorption(np.ndarray):
                     new_data: NDArray[np.floating] = np.zeros((len(arr1.y), len(new_ax))) + fill_val
                     new_data[:, :len(ax1)] = np.array(arr1)
                     new_data[:, len(ax1)+len(filled):] = np.array(arr2)
-                    return TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y), meta=copy.copy(self.meta))
+                    return TransientAbsorption(new_data, x=new_ax, y=np.copy(arr1.y), meta=combined_meta)
 
                 elif axis == 0:
                     new_data: NDArray[np.floating] = np.zeros((len(new_ax), len(arr1.x))) + fill_val
                     new_data[:len(ax1), :] = np.array(arr1)
                     new_data[len(ax1)+len(filled):, :] = np.array(arr2)
-                    return TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax, meta=copy.copy(self.meta))
+                    return TransientAbsorption(new_data, x=np.copy(arr1.x), y=new_ax, meta=combined_meta)
 
-    # TODO - Aggregate is only implemented for mean with linear indices.
     def downsample_time(
             self,
             *,
@@ -883,33 +758,29 @@ class TransientAbsorption(np.ndarray):
             aggregate: Literal['none', 'mean', 'median', 'min', 'max'] = 'none',
             **kwargs: Any
         ) -> TransientAbsorption:
+        """Select or aggregate time samples without preserving stale noise.
 
+        Averaging scales standard deviations by the actual number of samples
+        in each bin, assuming independent observations. A scalar/per-wavelength
+        ``noise_t0`` remains representable only when every bin has the same
+        count. Otherwise it is cleared, with counts and a reason recorded in
+        metadata; this fitter currently expects noise constant along time.
+        Noise is also cleared for nonlinear aggregation statistics.
+        """
         from phoskhemia.preprocessing.downsampling import make_time_indices
-        from phoskhemia.preprocessing.downsampling import downsample_time as _downsample_time
+
+        if method == "linear" and kwargs.get("stride") is None:
+            raise ValueError("stride must be specified for method='linear'")
         indices = make_time_indices(self.y, method=method, **kwargs)
-        if method == "linear":
-            if kwargs.get("stride") is None or kwargs.get("stride") == 0:
-                raise ValueError("stride must be specified for method='linear'")
-
-            binsize: int = kwargs.get("stride")
-            scaling: float = 1 / np.sqrt(np.abs(binsize))
-
-        if aggregate in ['mean', 'median', 'min', 'max']:
-            from phoskhemia.preprocessing.downsampling import downsample_time_binned
-            array = downsample_time_binned(self, indices, data_stat=aggregate)
-            if aggregate == "mean" and array.meta.noise_t0 is not None:
-                if isinstance(array.meta.noise_t0, np.ndarray):
-                    array.meta.noise_t0 = array.meta.noise_t0 * scaling
-                else:
-                    array.meta.noise_t0 = float(array.meta.noise_t0) * scaling
-                
+        if aggregate == 'none':
+            array = self[indices, :]
+            array.meta["downsample_idx_len"] = int(indices.size)
             return array
-
-        elif aggregate =='none':
-            return _downsample_time(self, indices)
-
-        else:
+        if aggregate not in ('mean', 'median', 'min', 'max'):
             raise ValueError("aggregate must be one of 'mean', 'median', 'min', 'max', or 'none'")
+
+        from phoskhemia.preprocessing.downsampling import downsample_time_binned
+        return downsample_time_binned(self, indices, data_stat=aggregate)
 
     # TODO - May update this to be less verbose with arguments.
     def export_csv(
@@ -1094,14 +965,14 @@ class TransientAbsorption(np.ndarray):
         beta0: NDArray[np.floating],
         *,
         noise: NDArray[np.floating] | float | int | None = None,
-        lam: float = 1e-12,
+        lam: float = 0.0,
         propagate_kinetic_uncertainty: bool = False,
         ci_sigma: float | None = None,
         ci_level: float | None = None,
         debug: bool = False,
-        solver: str | Solver = "odrpack",
+        solver: str | Solver = "least_squares",
         maxit: int = 50,
-        use_noise_as_sy: bool = False,
+        use_noise_as_sy: bool = True,
         sx: NDArray[np.floating] | None = None,
         scope_ppm: float | None = None,
         scope_jitter: float | None = None,
@@ -1117,7 +988,7 @@ class TransientAbsorption(np.ndarray):
         kinetic_model : KineticModel
             Kinetic model instance
         beta0 : NDArray[np.floating]
-            Initial guesses for kinetic parameters (log-space)
+            Initial guesses in the coordinates required by kinetic_model.parameterization().
         noise : NDArray[np.floating] | float | int | None, optional
             Per-wavelength noise σ(λ)
         lam : float, optional
@@ -1356,68 +1227,46 @@ class TransientAbsorption(np.ndarray):
             axis: Literal["x", "y", "wavelength", "time", "rows", "cols", 0, 1],
             new_range: float | int | tuple[float | int, float | int]
         ) -> TransientAbsorption:
+        """Select a closed coordinate range, including its nearest endpoints.
 
-        data = np.asarray(self, dtype=float)
-        x = np.asarray(self.x, dtype=float)
-        y = np.asarray(self.y, dtype=float)
-        
-        if axis == "x" or axis == "wavelength" or axis == "cols" or axis == 1:
-            if isinstance(new_range, (int, float)):
-                if new_range > x[-1]:
-                    raise ValueError("new_range cannot be larger than the largest wavelength")
-
-                start: int = 0
-                end: int = np.argmin(np.abs(x - new_range))
-
-            elif isinstance(new_range, (tuple, list)):
-                if new_range[0] > new_range[1]:
-                    raise ValueError("new_range must be in ascending order")
-                elif new_range[0] == new_range[1]:
-                    raise ValueError("Both values of new_range are the same. Use the trace method for single wavelengths")
-                if new_range[0] < x[0] or new_range[1] > x[-1]:
-                    raise ValueError("new_range cannot have values outside the range of wavelengths")
-                
-                start: int = np.argmin(np.abs(x - new_range[0]))
-                end: int = np.argmin(np.abs(x - new_range[1]))
-
-            meta: MetaDict = meta_copy_update(getattr(self, "meta", None), {"axis": axis, "trimmed": True, "old_range": (x[0], x[-1])})
-            if getattr(meta, "noise_t0", None) is not None:
-                meta.noise_t0 = meta.noise_t0[start:end]
-
-            if getattr(meta, "probe_transmittance", None) is not None:
-                meta["probe_transmittance"] = meta["probe_transmittance"][start:end]
-            
-            new_x = x[start:end]
-            new_data = data[:, start:end]
-            return TransientAbsorption(new_data, x=new_x, y=y, meta=meta)
-
-        elif axis == "y" or axis == "time" or axis == "rows" or axis == 0:
-            if isinstance(new_range, (int, float)):
-                if new_range > y[-1]:
-                    raise ValueError("new_range cannot be larger than the largest time delay")
-                
-                start: int = 0
-                end: int = np.argmin(np.abs(y - new_range))
-                
-            elif isinstance(new_range, (tuple, list)):
-                if new_range[0] > new_range[1]:
-                    raise ValueError("new_range must be in ascending order")
-                elif new_range[0] == new_range[1]:
-                    raise ValueError("Both values of new_range are the same. Use the spectrum method for single time delays")
-                if new_range[0] < y[0] or new_range[1] > new_range[-1]:
-                    raise ValueError("new_range cannot have values outside the range of time delays")
-                
-                start: int = np.argmin(np.abs(y - new_range[0]))
-                end: int = np.argmin(np.abs(y - new_range[1]))
-                
-            meta: MetaDict = meta_copy_update(getattr(self, "meta", None), {"axis": axis, "trimmed": True, "old_range": (y[0], y[-1])})
-            new_y = y[start:end]
-            new_data = data[start:end, :]
-            return TransientAbsorption(new_data, x=x, y=new_y, meta=meta)
-
+        A scalar is an upper bound; the lower bound is the axis minimum.
+        Input order is preserved, including descending coordinate axes.
+        """
+        if axis in ("x", "wavelength", "cols", 1):
+            dimension = 1
+            coordinates = np.asarray(self.x, dtype=float)
+        elif axis in ("y", "time", "rows", 0):
+            dimension = 0
+            coordinates = np.asarray(self.y, dtype=float)
         else:
-            raise ValueError("axis must be one of 'x', 'y', 'wavelength', 'time', 'rows', cols', 0, or 1")
-    
+            raise ValueError("axis must identify wavelength/x/cols/1 or time/y/rows/0")
+
+        if coordinates.size == 0 or not np.isfinite(coordinates).all():
+            raise ValueError("trim requires a finite, nonempty coordinate axis")
+        limits = np.asarray(new_range, dtype=float)
+        minimum, maximum = float(coordinates.min()), float(coordinates.max())
+        if limits.ndim == 0:
+            lower, upper = minimum, float(limits)
+        elif limits.shape == (2,):
+            lower, upper = map(float, limits)
+            if lower >= upper:
+                raise ValueError("new_range must have two distinct values in ascending order")
+        else:
+            raise ValueError("new_range must be a scalar upper bound or a pair of bounds")
+        if not np.isfinite([lower, upper]).all() or lower > upper:
+            raise ValueError("new_range must be finite and in ascending order")
+        if lower < minimum or upper > maximum:
+            raise ValueError("new_range cannot extend outside the coordinate axis")
+
+        lo = float(coordinates[_nearest_index(coordinates, lower)])
+        hi = float(coordinates[_nearest_index(coordinates, upper)])
+        selected = (coordinates >= min(lo, hi)) & (coordinates <= max(lo, hi))
+        out = self[:, selected] if dimension == 1 else self[selected, :]
+        out.meta = meta_copy_update(out.meta, {
+            "axis": axis, "trimmed": True, "old_range": (minimum, maximum),
+        })
+        return out
+
     @classmethod
     def from_arrays(
             cls,
