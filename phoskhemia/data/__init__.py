@@ -45,6 +45,9 @@ def __getattr__(name: str):
     if name == "load_fluorescence_spectrum":
         from .spectrum1d import load_fluorescence_spectrum
         return load_fluorescence_spectrum
+    if name == "load_absorption_collection":
+        from .io import load_absorption_collection
+        return load_absorption_collection
     # if name == "load_absorption_spectrum":
     #     from .spectrum1d import load_absorption_spectrum
     #     return load_absorption_spectrum
