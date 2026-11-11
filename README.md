@@ -109,3 +109,13 @@ coordinates and units, and the NumPy/SciPy versions when reporting a problem.
 AI workflow tools. Scientific assumptions and numerical results still require
 review against the intended experiment. The tests and validation notes record
 the checks included with this update.
+
+
+### Experimental analytical-fit performance
+
+For large TA time grids, `SensitizedTTAModel(evaluation="accelerated")`
+uses an accuracy-checked interpolation of the analytical series rather than
+performing one matrix exponential per time point. A compact weighted global
+objective with optional CuPy support is available separately as an experimental
+backend. See [`docs/performance-gpu.md`](docs/performance-gpu.md) for
+limitations, examples, benchmark details, and the untested CUDA status.
