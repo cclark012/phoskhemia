@@ -12,25 +12,37 @@ def time_indices_uniform(n: int, *, stride: int) -> NDArray[np.int64]:
     return np.arange(0, n, stride, dtype=np.int64)
 
 def time_indices_log(
-        times: NDArray[np.floating], 
-        *, 
-        n_log: int, 
-        eps: float = 1e-12
+        times: NDArray[np.floating],
+        *,
+        n_log: int,
+        eps: float | None = None,
     ) -> NDArray[np.int64]:
+    """Choose log-spaced indices with a default independent of time units.
 
-    t: NDArray[np.floating] = np.asarray(times, dtype=float).reshape(-1)
+    By default the logarithm uses elapsed time divided by the full window span
+    and an offset of 1e-12 in those dimensionless coordinates. An explicit
+    ``eps`` retains its historical meaning as an offset in the supplied time
+    units, so it must be converted along with the time axis.
+    """
+    t = np.asarray(times, dtype=float).reshape(-1)
     if n_log < 2:
         raise ValueError("n_log must be >= 2")
+    if t.size == 0 or not np.isfinite(t).all():
+        raise ValueError("times must be finite and nonempty")
+    if eps is not None and (not np.isfinite(eps) or eps <= 0):
+        raise ValueError("eps must be finite and positive")
+    if t.size == 1:
+        return np.array([0], dtype=np.int64)
+    if np.any(np.diff(t) <= 0):
+        raise ValueError("times must be strictly increasing")
 
-    t0: float = t.min()
-    # Shift so domain is positive for log, then convert t -> u
-    u: NDArray[np.floating] = np.log((t - t0) + eps)
-    umin: float
-    umax: float
-    umin, umax = float(u[0]), float(u[-1])
-    grid: NDArray[np.floating] = np.linspace(umin, umax, n_log)
-    idx: NDArray[np.integer] = np.unique(np.searchsorted(u, grid, side="left"))
-    idx[idx >= t.size] = t.size - 1
+    elapsed = t - t[0]
+    span = elapsed[-1]
+    offset = 1e-12 if eps is None else float(eps) / span
+    u = np.log(elapsed / span + offset)
+    grid = np.linspace(float(u[0]), float(u[-1]), n_log)
+    idx = np.searchsorted(u, grid, side="left")
+    idx = np.minimum(idx, t.size - 1)
     return np.unique(np.r_[0, idx, t.size - 1]).astype(np.int64)
 
 def time_indices_hybrid(
@@ -54,10 +66,9 @@ def downsample_time(
     ) -> TransientAbsorption:
 
     idx: NDArray[np.int64] = np.asarray(idx, dtype=np.int64)
-    data: NDArray[np.floating] = np.asarray(arr)[idx, :]
-    y: NDArray[np.floating] = np.asarray(arr.y, dtype=float)[idx]
-    meta: MetaDict = meta_copy_update(getattr(arr, "meta", None), {"downsample_idx_len": int(idx.size)})
-    return TransientAbsorption(data, x=arr.x, y=y, meta=meta)
+    result = arr[idx, :]
+    result.meta["downsample_idx_len"] = int(idx.size)
+    return result
 
 def make_time_indices(
         times: NDArray[np.floating],
@@ -89,6 +100,14 @@ def downsample_time_binned(
         data_stat: Literal['mean', 'median', 'min', 'max'] = "mean",      # currently only mean
     ) -> TransientAbsorption:
 
+    """Aggregate midpoint bins and update measurement-noise metadata.
+
+    ``noise_t0`` denotes a standard deviation constant along time. For means
+    with equal bin counts it is scaled assuming independent observations. An
+    aggregate requiring time-dependent uncertainty, or a nonlinear statistic
+    without a noise model, clears that key and records the reason. The actual
+    sample counts are available in ``meta["downsample_bin_counts"]``.
+    """
     data: NDArray[np.floating] = np.asarray(arr, dtype=float)
     t: NDArray[np.floating] = np.asarray(arr.y, dtype=float).reshape(-1)
 
@@ -169,5 +188,21 @@ def downsample_time_binned(
         "downsample_bins": int(n_bins),
         "downsample_time_stat": time_stat,
         "downsample_data_stat": data_stat,
+        "downsample_bin_counts": counts.astype(np.int64),
     })
+    noise = arr.meta.get("noise_t0")
+    if noise is not None:
+        sigma = np.asarray(noise, dtype=float)
+        constant_time_shape = sigma.ndim == 0 or sigma.shape == (n_wl,)
+        if data_stat == 'mean' and constant_time_shape and np.all(counts == counts[0]):
+            scaled = sigma / np.sqrt(counts[0])
+            meta["noise_t0"] = float(scaled) if scaled.ndim == 0 else scaled
+            meta["downsample_noise_note"] = "Independent observations; actual equal bin counts used"
+        else:
+            meta.pop("noise_t0", None)
+            if data_stat != 'mean':
+                reason = "Noise propagation for nonlinear aggregation statistics is not implemented"
+            else:
+                reason = "Aggregation requires time-dependent noise; constant-time noise_t0 was cleared"
+            meta["downsample_noise_note"] = reason
     return TransientAbsorption(data_new, x=arr.x, y=t_new, meta=meta)
