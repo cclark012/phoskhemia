@@ -1,3 +1,13 @@
+## Experimental performance additions (2026-11-08)
+
+- Added `SensitizedTTAModel(evaluation="accelerated")`, an opt-in interpolated
+  analytical series evaluator with independent interpolation checks and
+  bounded negligible-source tail. The direct evaluator remains the reference.
+- Added an experimental compact weighted variable-projection objective for
+  memory-efficient scalar optimization, with an optional, untested CuPy path.
+- Added an updated fitting example, regression tests and performance/GPU notes.
+- No changes to the default solver or public `GlobalFitResult` contract.
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
