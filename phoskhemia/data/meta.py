@@ -94,8 +94,45 @@ def meta_copy_update(
     """
     Coerce to MetaDict, shallow-copy, apply updates, and normalize schema markers.
     """
-    m = MetaDict.coerce(meta)
-    out = MetaDict(dict(m))  # shallow copy; preserves nested arrays by ref
+    out = MetaDict(dict(meta or {}))  # shallow copy; preserves nested arrays by ref
     if updates:
         out.update(dict(updates))
     return out.normalized()
+
+
+def subset_meta(
+        meta: Mapping[str, Any] | None,
+        source_shape: tuple[int, int],
+        row_index: Any = slice(None),
+        col_index: Any = slice(None),
+    ) -> MetaDict:
+    """Copy metadata and subset known coordinate-aligned noise/probe arrays.
+
+    ``noise_t0`` may be scalar, per wavelength, or per observation. Probe
+    transmittance is scalar or per wavelength. Unrecognized metadata is copied
+    shallowly, preserving its provenance rather than guessing its axis.
+    """
+    out = meta_copy_update(meta)
+    n_times, n_wavelengths = source_shape
+
+    def flat_index(index):
+        if isinstance(index, np.ndarray) and index.ndim == 2 and 1 in index.shape:
+            return index.reshape(-1)
+        return index
+
+    row_index, col_index = flat_index(row_index), flat_index(col_index)
+    for key in ("noise_t0", "probe_transmittance"):
+        value = out.get(key)
+        if value is None or np.ndim(value) == 0:
+            continue
+        values = np.asarray(value)
+        if values.ndim == 1 and values.size == n_wavelengths:
+            out[key] = np.array(values[col_index], copy=True)
+        elif key == "noise_t0" and values.shape == (n_times, n_wavelengths):
+            out[key] = np.array(values[row_index, :][:, col_index], copy=True)
+        else:
+            raise ValueError(
+                f"Metadata {key!r} has shape {values.shape}, which does not "
+                f"match the dataset shape {source_shape}"
+            )
+    return out
