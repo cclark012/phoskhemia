@@ -17,19 +17,17 @@ def weights_from_sigma(sigma: ArrayF | float) -> ArrayF | float:
     Notes
     -----
     - ODRPACK/odrpack expects weights, not sigmas.
-    - If σ contains zeros or non-finite values, weights are set to 0 at those entries.
+    - Standard deviations must be finite and strictly positive. Mask excluded
+        observations before fitting rather than assigning them invalid sigmas.
     """
-    if np.isscalar(sigma):
-        s = float(sigma)
-        if (not np.isfinite(s)) or (s <= 0.0):
-            return 0.0
-        return 1.0 / (s * s)
-
     s = np.asarray(sigma, dtype=float)
-    w = np.zeros_like(s, dtype=float)
-    good = np.isfinite(s) & (s > 0.0)
-    w[good] = 1.0 / np.square(s[good])
-    return w
+    if np.any(~np.isfinite(s)) or np.any(s <= 0):
+        raise ValueError("sigma must be finite and strictly positive")
+    with np.errstate(over="raise", divide="raise", invalid="raise"):
+        w = np.square(1.0 / s)
+    if np.any(w <= 0):
+        raise ValueError("sigma is outside the representable weight range")
+    return float(w) if w.ndim == 0 else w
 
 
 def time_sigma_from_scope(
@@ -137,6 +135,7 @@ class ODRPackSolver:
         maxit: int = 50,
         report: str = "none",
         diff_scheme: str = "forward",
+        task: str = "explicit-ODR",
     ) -> SolverResult:
 
         odrpack = _import_odrpack()
@@ -153,7 +152,7 @@ class ODRPackSolver:
             weight_x=weight_x,
             weight_y=weight_y,
             bounds=bounds,
-            task="explicit-ODR",
+            task=task,
             fix_beta=fix_beta,
             fix_x=fix_x,
             diff_scheme=diff_scheme,
@@ -211,14 +210,197 @@ class ODRPackSolver:
         )
 
 class LeastSquaresSolver:
-    pass
+    """Bounded, fixed-x least squares using SciPy.
 
-def get_solver(name: str):
-    if name == 'auto':
-        try:
-            _import_odrpack()
-            return ODRPackSolver()
-        except ImportError:
-            return LeastSquaresSolver()
-    if name == 'odrpack':
+    Covariance is a local linear approximation in optimizer coordinates.
+    Projected linear coefficients count toward residual degrees of freedom.
+    Rank is assessed after normalizing Jacobian columns, so changing seconds
+    to nanoseconds does not itself cause a spurious rank failure.
+    """
+
+    name = "least_squares"
+
+    def fit(
+        self, *, f, xdata, ydata, beta0, weight_x=None, weight_y=None,
+        bounds=None, fix_beta=None, fix_x=None, maxit=50, report="none",
+        diff_scheme="forward", absolute_sigma=False, n_projected=0.0,
+        n_observations=None, covariance=True, **kwargs,
+    ) -> SolverResult:
+
+        from scipy.optimize import least_squares
+
+        if weight_x is not None or (fix_x is not None and not np.all(fix_x)):
+            raise ValueError("LeastSquaresSolver requires fixed x values")
+
+        x = np.asarray(xdata, dtype=float)
+        y = np.asarray(ydata, dtype=float)
+        b0 = np.asarray(beta0, dtype=float)
+
+        if b0.ndim != 1 or not np.all(np.isfinite(b0)):
+            raise ValueError("beta0 must be a finite one-dimensional array")
+        if y.ndim != 1 or y.size == 0 or not np.all(np.isfinite(y)):
+            raise ValueError("ydata must be a nonempty finite one-dimensional array")
+        if not np.all(np.isfinite(x)):
+            raise ValueError("xdata must be finite")
+        if int(maxit) != maxit or maxit < 1:
+            raise ValueError("maxit must be a positive integer")
+
+        fixed = np.zeros(b0.size, dtype=bool) if fix_beta is None else np.asarray(fix_beta)
+        if fixed.shape != b0.shape or fixed.dtype.kind != "b":
+            raise ValueError("fix_beta must be a boolean array matching beta0")
+
+        free = ~fixed
+        if bounds is None:
+            lower, upper = np.full_like(b0, -np.inf), np.full_like(b0, np.inf)
+        else:
+            lower = (
+                np.full_like(b0, -np.inf) if bounds[0] is None 
+                else np.broadcast_to(np.asarray(bounds[0], dtype=float), b0.shape).copy()
+            )
+            upper = (
+                np.full_like(b0, np.inf) if bounds[1] is None 
+                else np.broadcast_to(np.asarray(bounds[1], dtype=float), b0.shape).copy()
+            )
+
+        if np.any(np.isnan(lower)) or np.any(np.isnan(upper)) or np.any(lower > upper):
+            raise ValueError("invalid parameter bounds")
+        if np.any(lower[free] >= upper[free]):
+            raise ValueError("free parameters require ordered bounds; use fix_beta to fix a parameter")
+        if np.any(b0 < lower) or np.any(b0 > upper):
+            raise ValueError("beta0 lies outside parameter bounds")
+
+        weight = (
+            np.ones_like(y) if weight_y is None else 
+            np.broadcast_to(np.asarray(weight_y, dtype=float), y.shape)
+        )
+        if np.any(~np.isfinite(weight)) or np.any(weight <= 0):
+            raise ValueError("weight_y must be finite and strictly positive")
+
+        sqrt_weight = np.sqrt(weight)
+        if kwargs.get("loss", "linear") != "linear":
+            raise ValueError("only loss='linear' is supported by this variable-projection solver")
+        if kwargs.get("method", "trf") == "lm":
+            raise ValueError("use method='trf' or 'dogbox'; model bounds are required")
+        if "jac" in kwargs:
+            raise ValueError("use diff_scheme rather than jac for the profiled objective")
+
+        schemes = {"forward": "2-point", "central": "3-point", "2-point": "2-point", "3-point": "3-point"}
+        if diff_scheme not in schemes:
+            raise ValueError("diff_scheme must be 'forward' or 'central'")
+
+        options = dict(kwargs)
+        x_scale = options.pop("x_scale", "jac")
+        if not isinstance(x_scale, str):
+            x_scale = np.broadcast_to(np.asarray(x_scale, dtype=float), b0.shape)[free]
+
+        # SciPy's default uses an absolute step floor of sqrt(eps), which is
+        # large for rates expressed per nanosecond. A relative step preserves
+        # the scale of each nonzero optimizer coordinate.
+        default_step = (
+            np.cbrt(np.finfo(float).eps) if schemes[diff_scheme] == "3-point" 
+            else np.sqrt(np.finfo(float).eps)
+        )
+        diff_step = options.pop("diff_step", default_step)
+        if np.ndim(diff_step):
+            diff_step = np.broadcast_to(np.asarray(diff_step, dtype=float), b0.shape)[free]
+
+        options["diff_step"] = diff_step
+        options.setdefault("max_nfev", int(maxit))
+        options.setdefault("verbose", 0 if report == "none" else 1)
+
+        def unpack(values):
+            beta = b0.copy()
+            beta[free] = values
+            return beta
+
+        def residual(values):
+            prediction = np.asarray(f(x, unpack(values)), dtype=float)
+            if prediction.shape != y.shape or not np.all(np.isfinite(prediction)):
+                raise ValueError("model must return finite predictions matching ydata")
+
+            result = (prediction - y) * sqrt_weight
+            if not np.all(np.isfinite(result)):
+                raise FloatingPointError("weighted residuals overflowed")
+
+            return result
+
+        if np.any(free):
+            raw = least_squares(residual, b0[free], bounds=(lower[free], upper[free]),
+                                jac=schemes[diff_scheme], x_scale=x_scale, **options)
+
+            beta, resid, jac = unpack(raw.x), raw.fun, raw.jac
+            success, message = bool(raw.success), str(raw.message)
+            nfev, njev = int(raw.nfev), raw.njev
+            active = np.zeros_like(b0, dtype=int)
+            active[free] = raw.active_mask
+
+        else:
+            raw = None
+            beta, resid = b0.copy(), residual(np.empty(0))
+            jac = np.empty((y.size, 0))
+            success, message, nfev, njev = True, "All kinetic parameters were fixed.", 1, 0
+            active = np.zeros_like(b0, dtype=int)
+
+        n_linear = float(n_projected(beta) if callable(n_projected) else n_projected)
+        n_obs = y.size if n_observations is None else int(n_observations)
+        if not np.isfinite(n_linear) or not 0 <= n_linear <= n_obs:
+            raise ValueError("n_projected must be finite and between zero and n_observations")
+        if not 0 < n_obs <= y.size or (n_observations is not None and n_obs != n_observations):
+            raise ValueError("n_observations must be a positive integer no larger than ydata.size")
+
+        n_free = int(np.count_nonzero(free))
+        dof = float(n_obs - n_free - n_linear)
+        rss = float(resid @ resid)
+        res_var = rss / dof if dof > 0 else float("nan")
+        cov = None
+        rank = 0
+        condition = float("nan")
+        reason = None
+        if n_free:
+            scales = np.linalg.norm(jac, axis=0)
+            safe_scales = np.where(scales > 0, scales, 1.0)
+            _, singular, vt = np.linalg.svd(jac / safe_scales, full_matrices=False)
+            threshold = np.finfo(float).eps * max(jac.shape) * (singular[0] if singular.size else 0)
+            rank = int(np.count_nonzero(singular > threshold))
+
+            if rank == n_free:
+                condition = float(singular[0] / singular[-1])
+            if not covariance:
+                reason = "Covariance disabled for the penalized objective."
+            elif rank < n_free:
+                reason = "The kinetic Jacobian is rank deficient."
+            elif dof <= 0:
+                reason = "No positive residual degrees of freedom."
+            else:
+                inv_j = (vt.T / singular) / safe_scales[:, None]
+                small_cov = inv_j @ inv_j.T
+                if not absolute_sigma:
+                    small_cov *= res_var
+                cov = np.zeros((b0.size, b0.size))
+                cov[np.ix_(free, free)] = small_cov
+
+        else:
+            cov = np.zeros((b0.size, b0.size)) if covariance else None
+        if not success:
+            cov = None
+            reason = "Optimizer did not converge; confidence intervals are unavailable."
+        info = {
+            "backend": self.name, "success": success, "stopreason": message,
+            "nfev": nfev, "njev": njev, "raw": raw, "n_free_kinetics": n_free,
+            "n_projected": n_linear, "n_observations": n_obs, "dof": dof,
+            "jacobian_rank": rank, "scaled_jacobian_condition": condition,
+            "active_bounds": active, "absolute_sigma": bool(absolute_sigma),
+            "covariance_unavailable_reason": reason,
+        }
+        sd = None if cov is None else np.sqrt(np.maximum(np.diag(cov), 0))
+
+        return SolverResult(beta, cov, sd, res_var, info)
+
+
+def get_solver(name: str) -> Solver:
+    """Select a backend without making defaults depend on optional installs."""
+    if name in {"auto", "least_squares", "scipy", "lsq"}:
+        return LeastSquaresSolver()
+    if name == "odrpack":
         return ODRPackSolver()
+    raise ValueError(f"Unknown solver {name!r}; use 'least_squares' or 'odrpack'")
