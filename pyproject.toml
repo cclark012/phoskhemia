@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -33,6 +33,9 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+io = [
+    "h5py",
+]
 odr = [
     "odrpack>=0.5.0",
 ]
