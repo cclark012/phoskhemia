@@ -28,6 +28,9 @@ class KineticModel(ABC):
     parameterization() -> Literal["log", "linear"]:
         Whether nonlinear variables will be fit in log or linear space. 
         Must return either "log" or "linear".
+    parameter_bounds() -> tuple[ndarray, ndarray]:
+        Lower and upper bounds in optimizer coordinates, matching the values
+        accepted by solve and supplied as beta0 to the global fitter.
     """
 
     @abstractmethod
@@ -87,6 +90,18 @@ class KineticModel(ABC):
 
         return "log"
 
+    def parameter_bounds(self) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+        """Default unbounded optimizer coordinates.
+
+        For a log-parameterized model, these bounds apply to the logarithms,
+        not to the positive natural parameters. Subclasses may override this
+        method; existing models retain their previous unbounded behavior.
+        """
+        return (
+            np.full(self.n_params(), -np.inf),
+            np.full(self.n_params(), np.inf),
+        )
+
 
 @dataclass(frozen=True)
 class CompositeKineticModel(KineticModel):
@@ -102,6 +117,15 @@ class CompositeKineticModel(KineticModel):
         if len(ps) != 1:
             raise ValueError(f"Composite requires matching parameterizations; got {ps}")
         return next(iter(ps))
+
+    def parameter_bounds(self) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+        bounds = [model.parameter_bounds() for model in self.models]
+        if not bounds:
+            return np.empty(0), np.empty(0)
+        return (
+            np.concatenate([bound[0] for bound in bounds]),
+            np.concatenate([bound[1] for bound in bounds]),
+        )
 
     def solve(self, times: NDArray[np.floating], beta: NDArray[np.floating]) -> NDArray[np.floating]:
         beta: NDArray[np.floating] = np.asarray(beta, dtype=float).reshape(-1)
