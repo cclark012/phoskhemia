@@ -1,0 +1,1761 @@
+{
+  "schema_version": 1,
+  "completed_at_utc": "2026-11-08T20:06:14.543916+00:00",
+  "elapsed_s": 8.031663800007664,
+  "environment": {
+    "python": "3.14.2",
+    "numpy": "2.3.5",
+    "scipy": "1.16.3",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64",
+    "logical_cpu_count": 32,
+    "package_version": "0.1.6",
+    "declared_python_requirement": ">=3.13"
+  },
+  "source_sha256": {
+    "phoskhemia/kinetics/analytic.py": "6f3e61e721272b44323b5687a57e483600c183c0d1dfafbf1edb15d20f2e25f2",
+    "examples/validate_analytic_domain.py": "116a4f16e8303722f9c5a7e44d903c7f4ab4940a6fae6afc3b641baead8ea66d"
+  },
+  "reference": {
+    "equation": "v'=exp(-(1-r)*s)-(nu-r)*v-eta*exp(-r*s)*v**2; r=min(nu,1); v(0)=0; w=exp(-r*s)*v",
+    "rtol": 1e-13,
+    "atol": 1e-15,
+    "method_rule": "Radau if (nu-min(nu,1))*max(s)>500; DOP853 otherwise"
+  },
+  "analytical_series_tolerance": 1e-14,
+  "dimensionless": {
+    "coordinate": "s = beta*t",
+    "normalization": "w = n/(P/beta); nu = gamma/beta; eta = q*P/beta**2",
+    "s_values": [
+      0.0,
+      1e-09,
+      1.1547819846894583e-09,
+      1.333521432163324e-09,
+      1.539926526059492e-09,
+      1.7782794100389228e-09,
+      2.053525026457146e-09,
+      2.3713737056616553e-09,
+      2.7384196342643613e-09,
+      3.1622776601683795e-09,
+      3.651741272548377e-09,
+      4.216965034285823e-09,
+      4.869675251658631e-09,
+      5.623413251903491e-09,
+      6.493816315762113e-09,
+      7.498942093324558e-09,
+      8.659643233600654e-09,
+      1e-08,
+      1.1547819846894582e-08,
+      1.333521432163324e-08,
+      1.539926526059492e-08,
+      1.7782794100389228e-08,
+      2.053525026457146e-08,
+      2.371373705661655e-08,
+      2.7384196342643613e-08,
+      3.162277660168379e-08,
+      3.651741272548377e-08,
+      4.2169650342858225e-08,
+      4.869675251658631e-08,
+      5.6234132519034905e-08,
+      6.493816315762114e-08,
+      7.498942093324559e-08,
+      8.659643233600653e-08,
+      1e-07,
+      1.1547819846894582e-07,
+      1.333521432163324e-07,
+      1.539926526059492e-07,
+      1.7782794100389227e-07,
+      2.053525026457146e-07,
+      2.3713737056616554e-07,
+      2.7384196342643614e-07,
+      3.162277660168379e-07,
+      3.651741272548377e-07,
+      4.2169650342858225e-07,
+      4.869675251658631e-07,
+      5.62341325190349e-07,
+      6.493816315762114e-07,
+      7.498942093324558e-07,
+      8.659643233600654e-07,
+      1e-06,
+      1.1547819846894582e-06,
+      1.333521432163324e-06,
+      1.539926526059492e-06,
+      1.778279410038923e-06,
+      2.053525026457146e-06,
+      2.3713737056616552e-06,
+      2.7384196342643613e-06,
+      3.162277660168379e-06,
+      3.651741272548377e-06,
+      4.216965034285822e-06,
+      4.869675251658631e-06,
+      5.623413251903491e-06,
+      6.493816315762113e-06,
+      7.498942093324558e-06,
+      8.659643233600654e-06,
+      1e-05,
+      1.1547819846894581e-05,
+      1.333521432163324e-05,
+      1.539926526059492e-05,
+      1.778279410038923e-05,
+      2.0535250264571462e-05,
+      2.3713737056616554e-05,
+      2.7384196342643615e-05,
+      3.1622776601683795e-05,
+      3.651741272548377e-05,
+      4.216965034285822e-05,
+      4.869675251658631e-05,
+      5.623413251903491e-05,
+      6.493816315762113e-05,
+      7.498942093324559e-05,
+      8.659643233600654e-05,
+      0.0001,
+      0.00011547819846894582,
+      0.0001333521432163324,
+      0.0001539926526059492,
+      0.00017782794100389227,
+      0.0002053525026457146,
+      0.00023713737056616554,
+      0.0002738419634264361,
+      0.00031622776601683794,
+      0.0003651741272548377,
+      0.00042169650342858224,
+      0.0004869675251658631,
+      0.0005623413251903491,
+      0.0006493816315762113,
+      0.0007498942093324559,
+      0.0008659643233600654,
+      0.001,
+      0.0011547819846894581,
+      0.001333521432163324,
+      0.001539926526059492,
+      0.0017782794100389228,
+      0.002053525026457146,
+      0.0023713737056616554,
+      0.0027384196342643613,
+      0.0031622776601683794,
+      0.003651741272548377,
+      0.004216965034285823,
+      0.004869675251658631,
+      0.005623413251903491,
+      0.006493816315762113,
+      0.007498942093324558,
+      0.008659643233600654,
+      0.01,
+      0.011547819846894581,
+      0.01333521432163324,
+      0.01539926526059492,
+      0.01778279410038923,
+      0.02053525026457146,
+      0.023713737056616554,
+      0.027384196342643614,
+      0.03162277660168379,
+      0.03651741272548377,
+      0.042169650342858224,
+      0.04869675251658631,
+      0.05623413251903491,
+      0.06493816315762113,
+      0.07498942093324558,
+      0.08659643233600653,
+      0.1,
+      0.11547819846894582,
+      0.1333521432163324,
+      0.1539926526059492,
+      0.1778279410038923,
+      0.2053525026457146,
+      0.23713737056616552,
+      0.27384196342643613,
+      0.31622776601683794,
+      0.3651741272548377,
+      0.4216965034285822,
+      0.4869675251658631,
+      0.5623413251903491,
+      0.6493816315762113,
+      0.7498942093324559,
+      0.8659643233600653,
+      1.0,
+      1.1547819846894583,
+      1.333521432163324,
+      1.539926526059492,
+      1.7782794100389228,
+      2.0535250264571463,
+      2.371373705661655,
+      2.7384196342643614,
+      3.1622776601683795,
+      3.651741272548377,
+      4.216965034285822,
+      4.869675251658631,
+      5.623413251903491,
+      6.493816315762113,
+      7.498942093324558,
+      8.659643233600654,
+      10.0,
+      11.547819846894582,
+      13.33521432163324,
+      15.39926526059492,
+      17.78279410038923,
+      20.53525026457146,
+      23.71373705661655,
+      27.384196342643612,
+      31.622776601683793,
+      36.51741272548377,
+      42.169650342858226,
+      48.69675251658631,
+      56.23413251903491,
+      64.93816315762113,
+      74.98942093324558,
+      86.59643233600653,
+      100.0,
+      115.47819846894582,
+      133.3521432163324,
+      153.9926526059492,
+      177.82794100389228,
+      205.3525026457146,
+      237.13737056616552,
+      273.8419634264361,
+      316.22776601683796,
+      365.1741272548377,
+      421.6965034285823,
+      486.9675251658631,
+      562.341325190349,
+      649.3816315762114,
+      749.8942093324558,
+      865.9643233600654,
+      1000.0,
+      1154.781984689458,
+      1333.521432163324,
+      1539.926526059492,
+      1778.2794100389228,
+      2053.525026457146,
+      2371.373705661655,
+      2738.4196342643613,
+      3162.2776601683795,
+      3651.741272548377,
+      4216.965034285822,
+      4869.675251658631,
+      5623.413251903491,
+      6493.816315762113,
+      7498.942093324558,
+      8659.643233600653,
+      10000.0,
+      11547.819846894581,
+      13335.21432163324,
+      15399.26526059492,
+      17782.794100389227,
+      20535.25026457146,
+      23713.737056616552,
+      27384.196342643612,
+      31622.776601683792,
+      36517.41272548377,
+      42169.65034285822,
+      48696.75251658631,
+      56234.13251903491,
+      64938.16315762113,
+      74989.42093324558,
+      86596.43233600653,
+      100000.0,
+      115478.19846894582,
+      133352.1432163324,
+      153992.6526059492,
+      177827.94100389228,
+      205352.50264571462,
+      237137.37056616554,
+      273841.9634264361,
+      316227.7660168379,
+      365174.1272548377,
+      421696.5034285823,
+      486967.5251658631,
+      562341.3251903491,
+      649381.6315762113,
+      749894.2093324559,
+      865964.3233600653,
+      1000000.0
+    ],
+    "nu_values": [
+      0.0,
+      1e-12,
+      0.00016666666666666666,
+      0.1,
+      0.9999999999,
+      1.0,
+      1.0000000001,
+      2.0,
+      10.0,
+      100.0
+    ],
+    "eta_values": [
+      0.0,
+      1e-16,
+      1e-08,
+      0.0001,
+      0.1,
+      1.0,
+      10.0
+    ],
+    "number_of_cases": 70,
+    "time_points_per_case": 242,
+    "cases": [
+      {
+        "eta": 0.0,
+        "nu": 0.0,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 836
+        },
+        "max_absolute_error": 1.3766765505351941e-14,
+        "at_coordinate": 11.547819846894582,
+        "analytical_value": 0.9999903429259297,
+        "reference_value": 0.9999903429259435,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 1.0
+      },
+      {
+        "eta": 0.0,
+        "nu": 1e-12,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 821
+        },
+        "max_absolute_error": 1.2545520178264269e-14,
+        "at_coordinate": 5.623413251903491,
+        "analytical_value": 0.9963877096095165,
+        "reference_value": 0.996387709609529,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.9999999999723358
+      },
+      {
+        "eta": 0.0,
+        "nu": 0.00016666666666666666,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 821
+        },
+        "max_absolute_error": 1.3766765505351941e-14,
+        "at_coordinate": 15.39926526059492,
+        "analytical_value": 0.9976028084801711,
+        "reference_value": 0.9976028084801849,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.9985507460952983
+      },
+      {
+        "eta": 0.0,
+        "nu": 0.1,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 836
+        },
+        "max_absolute_error": 9.103828801926284e-15,
+        "at_coordinate": 2.371373705661655,
+        "analytical_value": 0.7728116798275371,
+        "reference_value": 0.7728116798275462,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.7730886363319239
+      },
+      {
+        "eta": 0.0,
+        "nu": 0.9999999999,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 347
+        },
+        "max_absolute_error": 9.43689570931383e-16,
+        "at_coordinate": 0.4869675251658631,
+        "analytical_value": 0.2992352077922971,
+        "reference_value": 0.2992352077922962,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.36787944118983634
+      },
+      {
+        "eta": 0.0,
+        "nu": 1.0,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 437
+        },
+        "max_absolute_error": 1.1102230246251565e-16,
+        "at_coordinate": 0.31622776601683794,
+        "analytical_value": 0.23049633600839903,
+        "reference_value": 0.23049633600839914,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.36787944117144233
+      },
+      {
+        "eta": 0.0,
+        "nu": 1.0000000001,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 362
+        },
+        "max_absolute_error": 9.43689570931383e-16,
+        "at_coordinate": 0.5623413251903491,
+        "analytical_value": 0.3204632741358523,
+        "reference_value": 0.32046327413585135,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.3678794411530484
+      },
+      {
+        "eta": 0.0,
+        "nu": 2.0,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 18775
+        },
+        "max_absolute_error": 1.8041124150158794e-15,
+        "at_coordinate": 0.3651741272548377,
+        "analytical_value": 0.2123345905133493,
+        "reference_value": 0.2123345905133475,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.24949964156383006
+      },
+      {
+        "eta": 0.0,
+        "nu": 10.0,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 18069
+        },
+        "max_absolute_error": 5.412337245047638e-16,
+        "at_coordinate": 0.1778279410038923,
+        "analytical_value": 0.07423976502393823,
+        "reference_value": 0.07423976502393877,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.0773088636331924
+      },
+      {
+        "eta": 0.0,
+        "nu": 100.0,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 14842
+        },
+        "max_absolute_error": 1.6566609195578508e-16,
+        "at_coordinate": 0.01,
+        "analytical_value": 0.006284549419977028,
+        "reference_value": 0.006284549419976863,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.009543374367776603
+      },
+      {
+        "eta": 1e-16,
+        "nu": 0.0,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 836
+        },
+        "max_absolute_error": 1.6209256159527285e-14,
+        "at_coordinate": 3.1622776601683795,
+        "analytical_value": 0.9576707803767904,
+        "reference_value": 0.9576707803768066,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.9999999999999957
+      },
+      {
+        "eta": 1e-16,
+        "nu": 1e-12,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 821
+        },
+        "max_absolute_error": 1.2149614647682938e-11,
+        "at_coordinate": 649381.6315762113,
+        "analytical_value": 0.9999993505425018,
+        "reference_value": 0.9999993505546514,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.9999999999723322
+      },
+      {
+        "eta": 1e-16,
+        "nu": 0.00016666666666666666,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 851
+        },
+        "max_absolute_error": 3.502753642692369e-14,
+        "at_coordinate": 11547.819846894581,
+        "analytical_value": 0.14595309725084285,
+        "reference_value": 0.14595309725087788,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.9985507460952981
+      },
+      {
+        "eta": 1e-16,
+        "nu": 0.1,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 836
+        },
+        "max_absolute_error": 1.2212453270876722e-14,
+        "at_coordinate": 3.1622776601683795,
+        "analytical_value": 0.7628491049853507,
+        "reference_value": 0.762849104985363,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.773088636331922
+      },
+      {
+        "eta": 1e-16,
+        "nu": 0.9999999999,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 347
+        },
+        "max_absolute_error": 1.5404344466674047e-14,
+        "at_coordinate": 3.1622776601683795,
+        "analytical_value": 0.13385674560797134,
+        "reference_value": 0.13385674560798674,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.3678794411898364
+      },
+      {
+        "eta": 1e-16,
+        "nu": 1.0,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 437
+        },
+        "max_absolute_error": 1.5765166949677223e-14,
+        "at_coordinate": 3.1622776601683795,
+        "analytical_value": 0.1338567455868064,
+        "reference_value": 0.13385674558682217,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.36787944117144233
+      },
+      {
+        "eta": 1e-16,
+        "nu": 1.0000000001,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 362
+        },
+        "max_absolute_error": 1.5404344466674047e-14,
+        "at_coordinate": 3.1622776601683795,
+        "analytical_value": 0.1338567455656421,
+        "reference_value": 0.1338567455656575,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.3678794411530483
+      },
+      {
+        "eta": 1e-16,
+        "nu": 2.0,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 18778
+        },
+        "max_absolute_error": 9.83935155574045e-15,
+        "at_coordinate": 2.0535250264571463,
+        "analytical_value": 0.11182566047058831,
+        "reference_value": 0.11182566047059815,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.24949964156383012
+      },
+      {
+        "eta": 1e-16,
+        "nu": 10.0,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 18069
+        },
+        "max_absolute_error": 1.2212453270876722e-15,
+        "at_coordinate": 0.4216965034285822,
+        "analytical_value": 0.07124330671986709,
+        "reference_value": 0.07124330671986831,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.07730886363319218
+      },
+      {
+        "eta": 1e-16,
+        "nu": 100.0,
+        "series_order": 1,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 14842
+        },
+        "max_absolute_error": 1.6479873021779667e-16,
+        "at_coordinate": 0.01,
+        "analytical_value": 0.0062845494199770275,
+        "reference_value": 0.006284549419976863,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.009543374367776601
+      },
+      {
+        "eta": 1e-08,
+        "nu": 0.0,
+        "series_order": 2,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 836
+        },
+        "max_absolute_error": 1.3988810110276972e-14,
+        "at_coordinate": 11.547819846894582,
+        "analytical_value": 0.9999902424475484,
+        "reference_value": 0.9999902424475624,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.9999998182473133
+      },
+      {
+        "eta": 1e-08,
+        "nu": 1e-12,
+        "series_order": 2,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 836
+        },
+        "max_absolute_error": 1.6789569734498855e-11,
+        "at_coordinate": 649381.6315762113,
+        "analytical_value": 0.9935474529739644,
+        "reference_value": 0.9935474529571748,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.9999998182305305
+      },
+      {
+        "eta": 1e-08,
+        "nu": 0.00016666666666666666,
+        "series_order": 2,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1031
+        },
+        "max_absolute_error": 1.0974554598419672e-13,
+        "at_coordinate": 4869.675251658631,
+        "analytical_value": 0.4442005173207222,
+        "reference_value": 0.44420051732083193,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.9985506746368037
+      },
+      {
+        "eta": 1e-08,
+        "nu": 0.1,
+        "series_order": 2,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 881
+        },
+        "max_absolute_error": 9.2148511043888e-15,
+        "at_coordinate": 2.371373705661655,
+        "analytical_value": 0.7728116718571187,
+        "reference_value": 0.772811671857128,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.7730886264907002
+      },
+      {
+        "eta": 1e-08,
+        "nu": 0.9999999999,
+        "series_order": 2,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 392
+        },
+        "max_absolute_error": 7.771561172376096e-16,
+        "at_coordinate": 1.0,
+        "analytical_value": 0.3678794405990116,
+        "reference_value": 0.36787944059901084,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.3678794405990116
+      },
+      {
+        "eta": 1e-08,
+        "nu": 1.0,
+        "series_order": 2,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 437
+        },
+        "max_absolute_error": 7.216449660063518e-16,
+        "at_coordinate": 1.539926526059492,
+        "analytical_value": 0.3301554008375537,
+        "reference_value": 0.3301554008375544,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.3678794405806176
+      },
+      {
+        "eta": 1e-08,
+        "nu": 1.0000000001,
+        "series_order": 2,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 407
+        },
+        "max_absolute_error": 7.216449660063518e-16,
+        "at_coordinate": 1.0,
+        "analytical_value": 0.3678794405622236,
+        "reference_value": 0.3678794405622229,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.3678794405622236
+      },
+      {
+        "eta": 1e-08,
+        "nu": 2.0,
+        "series_order": 2,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 18778
+        },
+        "max_absolute_error": 1.609823385706477e-15,
+        "at_coordinate": 0.3651741272548377,
+        "analytical_value": 0.21233459045334793,
+        "reference_value": 0.21233459045334632,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.24949964140642703
+      },
+      {
+        "eta": 1e-08,
+        "nu": 10.0,
+        "series_order": 2,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 18083
+        },
+        "max_absolute_error": 7.355227538141662e-16,
+        "at_coordinate": 0.31622776601683794,
+        "analytical_value": 0.07628491049332253,
+        "reference_value": 0.07628491049332327,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.07730886362834447
+      },
+      {
+        "eta": 1e-08,
+        "nu": 100.0,
+        "series_order": 2,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 14849
+        },
+        "max_absolute_error": 1.682681771697503e-16,
+        "at_coordinate": 0.01,
+        "analytical_value": 0.006284549419975749,
+        "reference_value": 0.006284549419975581,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.009543374367767903
+      },
+      {
+        "eta": 0.0001,
+        "nu": 0.0,
+        "series_order": 3,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 2120
+        },
+        "max_absolute_error": 4.1300296516055823e-14,
+        "at_coordinate": 421.6965034285823,
+        "analytical_value": 0.9596748058147823,
+        "reference_value": 0.9596748058148236,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.9991110728976483
+      },
+      {
+        "eta": 0.0001,
+        "nu": 1e-12,
+        "series_order": 3,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 2120
+        },
+        "max_absolute_error": 3.544248228237734e-13,
+        "at_coordinate": 749894.2093324559,
+        "analytical_value": 0.013159747526038513,
+        "reference_value": 0.013159747526392937,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.9991110728899972
+      },
+      {
+        "eta": 0.0001,
+        "nu": 0.00016666666666666666,
+        "series_order": 3,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1577
+        },
+        "max_absolute_error": 8.537615059367454e-14,
+        "at_coordinate": 1539.926526059492,
+        "analytical_value": 0.6813158464330024,
+        "reference_value": 0.6813158464330877,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.9978366778025656
+      },
+      {
+        "eta": 0.0001,
+        "nu": 0.1,
+        "series_order": 3,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1010
+        },
+        "max_absolute_error": 1.1102230246251565e-14,
+        "at_coordinate": 7.498942093324558,
+        "analytical_value": 0.524070342921179,
+        "reference_value": 0.5240703429211901,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.7729902378647154
+      },
+      {
+        "eta": 0.0001,
+        "nu": 0.9999999999,
+        "series_order": 3,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 593
+        },
+        "max_absolute_error": 3.4139358007223564e-15,
+        "at_coordinate": 3.1622776601683795,
+        "analytical_value": 0.1338515633863684,
+        "reference_value": 0.13385156338636497,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.3678735330627389
+      },
+      {
+        "eta": 0.0001,
+        "nu": 1.0,
+        "series_order": 3,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 599
+        },
+        "max_absolute_error": 6.5780714209040525e-15,
+        "at_coordinate": 3.1622776601683795,
+        "analytical_value": 0.1338515633652054,
+        "reference_value": 0.13385156336519882,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.36787353304434545
+      },
+      {
+        "eta": 0.0001,
+        "nu": 1.0000000001,
+        "series_order": 3,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 593
+        },
+        "max_absolute_error": 3.469446951953614e-15,
+        "at_coordinate": 3.1622776601683795,
+        "analytical_value": 0.1338515633440424,
+        "reference_value": 0.13385156334403894,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.367873533025952
+      },
+      {
+        "eta": 0.0001,
+        "nu": 2.0,
+        "series_order": 3,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 18778
+        },
+        "max_absolute_error": 1.942890293094024e-15,
+        "at_coordinate": 1.0,
+        "analytical_value": 0.23254188309863597,
+        "reference_value": 0.23254188309863402,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.24949806754567946
+      },
+      {
+        "eta": 0.0001,
+        "nu": 10.0,
+        "series_order": 3,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 18279
+        },
+        "max_absolute_error": 9.992007221626409e-16,
+        "at_coordinate": 0.31622776601683794,
+        "analytical_value": 0.07628485837287209,
+        "reference_value": 0.07628485837287309,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.07730881515596014
+      },
+      {
+        "eta": 0.0001,
+        "nu": 100.0,
+        "series_order": 3,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 14905
+        },
+        "max_absolute_error": 8.352693536828326e-16,
+        "at_coordinate": 1.1547819846894583,
+        "analytical_value": 0.00318309323974349,
+        "reference_value": 0.003183093239744325,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.009543374280792539
+      },
+      {
+        "eta": 0.1,
+        "nu": 0.0,
+        "series_order": 7,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 3173
+        },
+        "max_absolute_error": 2.9110047705671604e-13,
+        "at_coordinate": 1.1547819846894583,
+        "analytical_value": 0.6622254510147133,
+        "reference_value": 0.6622254510144222,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.8173893650119701
+      },
+      {
+        "eta": 0.1,
+        "nu": 1e-12,
+        "series_order": 7,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 3149
+        },
+        "max_absolute_error": 2.9765079290200447e-13,
+        "at_coordinate": 1.1547819846894583,
+        "analytical_value": 0.662225451014272,
+        "reference_value": 0.6622254510139743,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.8173893650105373
+      },
+      {
+        "eta": 0.1,
+        "nu": 0.00016666666666666666,
+        "series_order": 7,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 2846
+        },
+        "max_absolute_error": 2.6489921367556235e-13,
+        "at_coordinate": 1.1547819846894583,
+        "analytical_value": 0.6621518768967697,
+        "reference_value": 0.6621518768965048,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.817150561854057
+      },
+      {
+        "eta": 0.1,
+        "nu": 0.1,
+        "series_order": 7,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1301
+        },
+        "max_absolute_error": 4.1866510258614653e-13,
+        "at_coordinate": 1.539926526059492,
+        "analytical_value": 0.6789480724077567,
+        "reference_value": 0.678948072407338,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.7044785218101823
+      },
+      {
+        "eta": 0.1,
+        "nu": 0.9999999999,
+        "series_order": 7,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 908
+        },
+        "max_absolute_error": 1.0394463068053028e-14,
+        "at_coordinate": 0.1,
+        "analytical_value": 0.09045576505511539,
+        "reference_value": 0.09045576505512579,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.3620883044246423
+      },
+      {
+        "eta": 0.1,
+        "nu": 1.0,
+        "series_order": 7,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 947
+        },
+        "max_absolute_error": 1.1587952819525071e-14,
+        "at_coordinate": 0.1,
+        "analytical_value": 0.09045576505466327,
+        "reference_value": 0.09045576505467486,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.36208830440682277
+      },
+      {
+        "eta": 0.1,
+        "nu": 1.0000000001,
+        "series_order": 7,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 908
+        },
+        "max_absolute_error": 1.0408340855860843e-14,
+        "at_coordinate": 0.1,
+        "analytical_value": 0.09045576505421112,
+        "reference_value": 0.09045576505422152,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.3620883043890033
+      },
+      {
+        "eta": 0.1,
+        "nu": 2.0,
+        "series_order": 7,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 18083
+        },
+        "max_absolute_error": 2.7755575615628914e-15,
+        "at_coordinate": 0.23713737056616552,
+        "analytical_value": 0.16631461775308057,
+        "reference_value": 0.1663146177530778,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.2479386162930066
+      },
+      {
+        "eta": 0.1,
+        "nu": 10.0,
+        "series_order": 7,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 19763
+        },
+        "max_absolute_error": 7.91033905045424e-16,
+        "at_coordinate": 0.23713737056616552,
+        "analytical_value": 0.07723778461361318,
+        "reference_value": 0.07723778461361239,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.07726043368104388
+      },
+      {
+        "eta": 0.1,
+        "nu": 100.0,
+        "series_order": 7,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 15304
+        },
+        "max_absolute_error": 2.688821387764051e-16,
+        "at_coordinate": 0.4869675251658631,
+        "analytical_value": 0.0062068999607229995,
+        "reference_value": 0.006206899960722731,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.009543287385157544
+      },
+      {
+        "eta": 1.0,
+        "nu": 0.0,
+        "series_order": 10,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 3278
+        },
+        "max_absolute_error": 2.4646951146678475e-13,
+        "at_coordinate": 1.333521432163324,
+        "analytical_value": 0.5193247767274232,
+        "reference_value": 0.5193247767271767,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.5193247767274232
+      },
+      {
+        "eta": 1.0,
+        "nu": 1e-12,
+        "series_order": 10,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 3275
+        },
+        "max_absolute_error": 1.4477308241112041e-13,
+        "at_coordinate": 1.1547819846894583,
+        "analytical_value": 0.5157752590418663,
+        "reference_value": 0.5157752590417215,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.5193247767271073
+      },
+      {
+        "eta": 1.0,
+        "nu": 0.00016666666666666666,
+        "series_order": 10,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 3020
+        },
+        "max_absolute_error": 1.1934897514720433e-13,
+        "at_coordinate": 1.1547819846894583,
+        "analytical_value": 0.515728867544431,
+        "reference_value": 0.5157288675443117,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.5192721374367351
+      },
+      {
+        "eta": 1.0,
+        "nu": 0.1,
+        "series_order": 10,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1685
+        },
+        "max_absolute_error": 9.481304630298837e-14,
+        "at_coordinate": 1.539926526059492,
+        "analytical_value": 0.4794008283343264,
+        "reference_value": 0.4794008283342316,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.48876291569451213
+      },
+      {
+        "eta": 1.0,
+        "nu": 0.9999999999,
+        "series_order": 10,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1097
+        },
+        "max_absolute_error": 4.113376306236205e-14,
+        "at_coordinate": 1.7782794100389228,
+        "analytical_value": 0.23626076286253161,
+        "reference_value": 0.23626076286249048,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.3228427282680771
+      },
+      {
+        "eta": 1.0,
+        "nu": 1.0,
+        "series_order": 10,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1127
+        },
+        "max_absolute_error": 4.0994985184283905e-14,
+        "at_coordinate": 1.7782794100389228,
+        "analytical_value": 0.23626076284601016,
+        "reference_value": 0.23626076284596917,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.3228427282556882
+      },
+      {
+        "eta": 1.0,
+        "nu": 1.0000000001,
+        "series_order": 10,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1112
+        },
+        "max_absolute_error": 4.110600748674642e-14,
+        "at_coordinate": 1.7782794100389228,
+        "analytical_value": 0.23626076282948857,
+        "reference_value": 0.23626076282944747,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.3228427282432993
+      },
+      {
+        "eta": 1.0,
+        "nu": 2.0,
+        "series_order": 10,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 21351
+        },
+        "max_absolute_error": 2.8033131371785203e-15,
+        "at_coordinate": 0.4216965034285822,
+        "analytical_value": 0.21809115136392665,
+        "reference_value": 0.21809115136392385,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.23496779057307984
+      },
+      {
+        "eta": 1.0,
+        "nu": 10.0,
+        "series_order": 10,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 21275
+        },
+        "max_absolute_error": 6.800116025829084e-16,
+        "at_coordinate": 0.1778279410038923,
+        "analytical_value": 0.07392718242128203,
+        "reference_value": 0.07392718242128271,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.07685059981985816
+      },
+      {
+        "eta": 1.0,
+        "nu": 100.0,
+        "series_order": 10,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 15752
+        },
+        "max_absolute_error": 2.0729945537922845e-16,
+        "at_coordinate": 0.4869675251658631,
+        "analytical_value": 0.006206546199445227,
+        "reference_value": 0.00620654619944502,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.009542504671674034
+      },
+      {
+        "eta": 10.0,
+        "nu": 0.0,
+        "series_order": 18,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 3515
+        },
+        "max_absolute_error": 3.3056890558214036e-14,
+        "at_coordinate": 0.4869675251658631,
+        "analytical_value": 0.2365073911494561,
+        "reference_value": 0.23650739114948915,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.23848539267380808
+      },
+      {
+        "eta": 10.0,
+        "nu": 1e-12,
+        "series_order": 18,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 3515
+        },
+        "max_absolute_error": 4.349298698969051e-14,
+        "at_coordinate": 0.1778279410038923,
+        "analytical_value": 0.1482357666486011,
+        "reference_value": 0.14823576664855762,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.23848539267376542
+      },
+      {
+        "eta": 10.0,
+        "nu": 0.00016666666666666666,
+        "series_order": 18,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 3302
+        },
+        "max_absolute_error": 4.232725281383409e-14,
+        "at_coordinate": 0.1778279410038923,
+        "analytical_value": 0.14823370397522656,
+        "reference_value": 0.14823370397518423,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.2384782785817338
+      },
+      {
+        "eta": 10.0,
+        "nu": 0.1,
+        "series_order": 18,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 2237
+        },
+        "max_absolute_error": 4.413136522884997e-14,
+        "at_coordinate": 0.1778279410038923,
+        "analytical_value": 0.1470047222182239,
+        "reference_value": 0.14700472221817976,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.23425758221317383
+      },
+      {
+        "eta": 10.0,
+        "nu": 0.9999999999,
+        "series_order": 18,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1640
+        },
+        "max_absolute_error": 9.395262345890387e-14,
+        "at_coordinate": 0.5623413251903491,
+        "analytical_value": 0.19972698565865502,
+        "reference_value": 0.19972698565856106,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.2004715756507374
+      },
+      {
+        "eta": 10.0,
+        "nu": 1.0,
+        "series_order": 18,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1655
+        },
+        "max_absolute_error": 3.2307490016592055e-14,
+        "at_coordinate": 0.5623413251903491,
+        "analytical_value": 0.19972698565515495,
+        "reference_value": 0.19972698565512265,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.2004715756474672
+      },
+      {
+        "eta": 10.0,
+        "nu": 1.0000000001,
+        "series_order": 18,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1625
+        },
+        "max_absolute_error": 9.384160115644136e-14,
+        "at_coordinate": 0.5623413251903491,
+        "analytical_value": 0.19972698565165498,
+        "reference_value": 0.19972698565156113,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.2004715756441971
+      },
+      {
+        "eta": 10.0,
+        "nu": 2.0,
+        "series_order": 18,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 28112
+        },
+        "max_absolute_error": 1.915134717478395e-15,
+        "at_coordinate": 0.31622776601683794,
+        "analytical_value": 0.16287595719673906,
+        "reference_value": 0.16287595719674097,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.17077752566514548
+      },
+      {
+        "eta": 10.0,
+        "nu": 10.0,
+        "series_order": 18,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 22127
+        },
+        "max_absolute_error": 9.783840404509192e-16,
+        "at_coordinate": 0.05623413251903491,
+        "analytical_value": 0.041391252439721936,
+        "reference_value": 0.04139125243972096,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.07327563822946077
+      },
+      {
+        "eta": 10.0,
+        "nu": 100.0,
+        "series_order": 18,
+        "reference_solver": {
+          "method": "Radau",
+          "function_evaluations": 16655
+        },
+        "max_absolute_error": 1.6566609195578508e-16,
+        "at_coordinate": 0.27384196342643613,
+        "analytical_value": 0.007675324618776226,
+        "reference_value": 0.007675324618776061,
+        "minimum_analytical_value": 0.0,
+        "maximum_analytical_value": 0.009534690391152116
+      }
+    ],
+    "worst_case": {
+      "eta": 1e-08,
+      "nu": 1e-12,
+      "series_order": 2,
+      "reference_solver": {
+        "method": "DOP853",
+        "function_evaluations": 836
+      },
+      "max_absolute_error": 1.6789569734498855e-11,
+      "at_coordinate": 649381.6315762113,
+      "analytical_value": 0.9935474529739644,
+      "reference_value": 0.9935474529571748,
+      "minimum_analytical_value": 0.0,
+      "maximum_analytical_value": 0.9999998182305305
+    },
+    "equivalent_error_M_at_concentration_scale_1e-6_M": 1.6789569734498855e-17,
+    "worst_case_tighter_reference_checks": [
+      {
+        "rtol": 3e-14,
+        "atol": 3e-16,
+        "solver": {
+          "method": "DOP853",
+          "function_evaluations": 797
+        },
+        "reference_value": 0.9935474529571681,
+        "absolute_error_from_analytical": 1.6796342094949068e-11
+      },
+      {
+        "rtol": 3e-14,
+        "atol": 3e-16,
+        "solver": {
+          "method": "Radau",
+          "function_evaluations": 25446
+        },
+        "reference_value": 0.9935474529571648,
+        "absolute_error_from_analytical": 1.679956174172048e-11
+      }
+    ]
+  },
+  "physical_example": {
+    "coordinate_unit": "s",
+    "concentration_unit": "M",
+    "P_M_s_inv": 3.0,
+    "beta_s_inv": 6000000.0,
+    "gamma_s_inv": 1000.0,
+    "q_values_M_inv_s_inv": [
+      0.001,
+      1.0,
+      1000.0,
+      1000000.0,
+      1000000000.0,
+      10000000000.0
+    ],
+    "times_s": [
+      1e-09,
+      1.0694652229266453e-09,
+      1.1437558630495388e-09,
+      1.2232071190499326e-09,
+      1.3081774742601955e-09,
+      1.3990503141372956e-09,
+      1.4962356560944358e-09,
+      1.600171999495831e-09,
+      1.7113283041617775e-09,
+      1.830206106311053e-09,
+      1.9573417814876577e-09,
+      2.0933089646823344e-09,
+      2.2387211385683377e-09,
+      2.3942344015295803e-09,
+      2.5605504279704754e-09,
+      2.7384196342643613e-09,
+      2.9286445646252374e-09,
+      3.132083512179837e-09,
+      3.3496543915782794e-09,
+      3.5823388806164806e-09,
+      3.831186849557293e-09,
+      4.097321098135422e-09,
+      4.381942421619445e-09,
+      4.686335028788964e-09,
+      5.011872336272715e-09,
+      5.360023165391784e-09,
+      5.732358369467708e-09,
+      6.130557921498202e-09,
+      6.5564184941797855e-09,
+      7.011861566478363e-09,
+      7.498942093324558e-09,
+      8.019857777551352e-09,
+      8.576958985908947e-09,
+      9.172759353897803e-09,
+      9.809947127268784e-09,
+      1.0491397291363092e-08,
+      1.122018454301963e-08,
+      1.1999597163578586e-08,
+      1.2833151855576512e-08,
+      1.3724609610075626e-08,
+      1.4677992676220705e-08,
+      1.569760270959001e-08,
+      1.6788040181225588e-08,
+      1.7954225134915903e-08,
+      1.920141938638801e-08,
+      2.053525026457146e-08,
+      2.1961736002054366e-08,
+      2.3487312889293202e-08,
+      2.511886431509582e-08,
+      2.6863751824408107e-08,
+      2.8729848333536628e-08,
+      3.0725573652674454e-08,
+      3.285993247600654e-08,
+      3.514255501080684e-08,
+      3.7583740428844434e-08,
+      4.019450333615128e-08,
+      4.298662347082272e-08,
+      4.597269885308718e-08,
+      4.916620262745641e-08,
+      5.2581543853429274e-08,
+      5.6234132519034905e-08,
+      6.014044907055617e-08,
+      6.43181187721509e-08,
+      6.878599123088081e-08,
+      7.356422544596421e-08,
+      7.867438076599394e-08,
+      8.413951416451947e-08,
+      8.998428427289744e-08,
+      9.623506263980888e-08,
+      1.0292005271944285e-07,
+      1.100694171252208e-07,
+      1.1771541372323017e-07,
+      1.2589254117941662e-07,
+      1.3463769461724664e-07,
+      1.4399033208816326e-07,
+      1.539926526059492e-07,
+      1.6468978654828688e-07,
+      1.7612999928460524e-07,
+      1.883649089489802e-07,
+      2.0144971934067835e-07,
+      2.1544346900318867e-07,
+      2.3040929760558446e-07,
+      2.464147308281281e-07,
+      2.635319850375133e-07,
+      2.818382931264455e-07,
+      3.014162529877386e-07,
+      3.223542001952459e-07,
+      3.447466065731491e-07,
+      3.6869450645195734e-07,
+      3.94305952534472e-07,
+      4.2169650342858225e-07,
+      4.5098974504663553e-07,
+      4.823178482239309e-07,
+      5.158221650723061e-07,
+      5.516538667595586e-07,
+      5.899746255923572e-07,
+      6.30957344480193e-07,
+      6.747869370717136e-07,
+      7.216611620833883e-07,
+      7.717915155850127e-07,
+      8.254041852680173e-07,
+      8.827410710022461e-07,
+      9.440608762859226e-07,
+      1.0096402755134482e-06,
+      1.0797751623277093e-06,
+      1.1547819846894582e-06,
+      1.2349991726875851e-06,
+      1.3207886655325506e-06,
+      1.4125375446227554e-06,
+      1.5106597800522312e-06,
+      1.6155980984398762e-06,
+      1.7278259805078661e-06,
+      1.8478497974222906e-06,
+      1.9762110955351863e-06,
+      2.113489039836648e-06,
+      2.2603030271419173e-06,
+      2.417315480804101e-06,
+      2.5852348395621886e-06,
+      2.7648187540101058e-06,
+      2.9568775051091873e-06,
+      3.162277660168379e-06,
+      3.3819459827879256e-06,
+      3.6168736144081613e-06,
+      3.868120546330525e-06,
+      4.136820402388511e-06,
+      4.4241855538479235e-06,
+      4.731512589614812e-06,
+      5.060188166432624e-06,
+      5.411695265464638e-06,
+      5.7876198834912085e-06,
+      6.189658188912597e-06,
+      6.619624174845146e-06,
+      7.079457843841373e-06,
+      7.571233961163601e-06,
+      8.097171416105618e-06,
+      8.659643233600654e-06,
+      9.261187281287937e-06,
+      9.904517720348016e-06,
+      1.0592537251772897e-05,
+      1.1328350213326095e-05,
+      1.2115276586285876e-05,
+      1.2956866975170189e-05,
+      1.3856918628031273e-05,
+      1.4819492569603849e-05,
+      1.584893192461114e-05,
+      1.6949881513903478e-05,
+      1.8127308811847006e-05,
+      1.9386526359522056e-05,
+      2.073321573485954e-05,
+      2.2173453187867786e-05,
+      2.3713737056616554e-05,
+      2.5361017087678267e-05,
+      2.7122725793320296e-05,
+      2.900681198693156e-05,
+      3.102177664799505e-05,
+      3.3176711278428546e-05,
+      3.5481338923357534e-05,
+      3.794605804140442e-05,
+      4.058198942243799e-05,
+      4.34010263644744e-05,
+      4.641588833612782e-05,
+      4.964017836673521e-05,
+      5.308844442309879e-05,
+      5.6776245049778165e-05,
+      6.072021956909884e-05,
+      6.493816315762113e-05,
+      6.944910713781214e-05,
+      7.427340484719673e-05,
+      7.943282347242822e-05,
+      8.49506422626333e-05,
+      9.085175756516861e-05,
+      9.716279515771058e-05,
+      0.0001039122303835169,
+      0.00011113051663191282,
+      0.00011885022274370189,
+      0.00012710617996147458,
+      0.00013593563908785269,
+      0.00014537843856076606,
+      0.00015547718420411727,
+      0.00016627744146486336,
+      0.00017782794100389227,
+      0.00019018079856831396,
+      0.0002033917501372293,
+      0.00021752040340195246,
+      0.00023263050671536287,
+      0.0002487902367238835,
+      0.00026607250597988083,
+      0.0002845552919224244,
+      0.00030432198871077225,
+      0.000325461783498046,
+      0.0003480700588428413,
+      0.0003722488230744498,
+      0.0003981071705534969,
+      0.00042576177390469156,
+      0.00045533741044262487,
+      0.0004869675251658631,
+      0.0005207948328595465,
+      0.0005569719620231798,
+      0.000595662143529011,
+      0.000637039947118217,
+      0.0006812920690579609,
+      0.0007286181745132274,
+      0.000779231798434194,
+      0.000833361309023956,
+      0.0008912509381337459,
+      0.0009531618832347882,
+      0.0010193734859388736,
+      0.0010901844923851289,
+      0.0011659144011798312,
+      0.001246904904971174,
+      0.001333521432163324,
+      0.0014261547957260085,
+      0.0015252229565390198,
+      0.0016311729092278397,
+      0.001744482698999256,
+      0.001865663578576911,
+      0.001995262314968879,
+      0.002133863656475326,
+      0.0022820929710674507,
+      0.002440619068041981,
+      0.0026101572156825388,
+      0.0027914723685435175,
+      0.0029853826189179633,
+      0.003192762888062425,
+      0.003414548873833601,
+      0.003651741272548377,
+      0.003905410294116381,
+      0.00417670049081719,
+      0.004466835921509635,
+      0.004777125674574048,
+      0.005108969774506924,
+      0.0054638654988185395,
+      0.005843414133735175,
+      0.006249328199187798,
+      0.006683439175686149,
+      0.007147705767941861,
+      0.007644222742526009,
+      0.00817523037943651,
+      0.008743124580220732,
+      0.009350467678261195,
+      0.01
+    ],
+    "number_of_cases": 6,
+    "time_points_per_case": 241,
+    "cases": [
+      {
+        "q_M_inv_s_inv": 0.001,
+        "eta": 8.333333333333334e-17,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 848
+        },
+        "max_absolute_error": 3.0122609186731056e-20,
+        "at_coordinate": 0.0006812920690579609,
+        "analytical_value": 2.530235860613475e-07,
+        "reference_value": 2.5302358606131736e-07,
+        "minimum_analytical_value": 2.2703748839388223e-11,
+        "maximum_analytical_value": 4.992731558984278e-07,
+        "equivalent_normalized_error": 6.024521837346211e-14
+      },
+      {
+        "q_M_inv_s_inv": 1.0,
+        "eta": 8.333333333333334e-14,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 863
+        },
+        "max_absolute_error": 4.621623518456276e-20,
+        "at_coordinate": 0.0009531618832347882,
+        "analytical_value": 1.9279219431466997e-07,
+        "reference_value": 1.927921943147162e-07,
+        "minimum_analytical_value": 2.2703748828086338e-11,
+        "maximum_analytical_value": 4.992731558981377e-07,
+        "equivalent_normalized_error": 9.243247036912552e-14
+      },
+      {
+        "q_M_inv_s_inv": 1000.0,
+        "eta": 8.333333333333333e-11,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 908
+        },
+        "max_absolute_error": 4.5501551135316946e-20,
+        "at_coordinate": 0.001865663578576911,
+        "analytical_value": 7.740959798278064e-08,
+        "reference_value": 7.740959798282614e-08,
+        "minimum_analytical_value": 2.2703737489029535e-11,
+        "maximum_analytical_value": 4.992731556083368e-07,
+        "equivalent_normalized_error": 9.100310227063389e-14
+      },
+      {
+        "q_M_inv_s_inv": 1000000.0,
+        "eta": 8.333333333333334e-08,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1013
+        },
+        "max_absolute_error": 4.544861157611355e-20,
+        "at_coordinate": 0.0009531618832347882,
+        "analytical_value": 1.9273299332514938e-07,
+        "reference_value": 1.9273299332519483e-07,
+        "minimum_analytical_value": 2.269240409818602e-11,
+        "maximum_analytical_value": 4.992728658076142e-07,
+        "equivalent_normalized_error": 9.08972231522271e-14
+      },
+      {
+        "q_M_inv_s_inv": 1000000000.0,
+        "eta": 8.333333333333333e-05,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1412
+        },
+        "max_absolute_error": 5.278074052578359e-20,
+        "at_coordinate": 0.0004869675251658631,
+        "analytical_value": 2.576541328548384e-07,
+        "reference_value": 2.576541328548912e-07,
+        "minimum_analytical_value": 1.513648219663378e-11,
+        "maximum_analytical_value": 4.989832353408961e-07,
+        "equivalent_normalized_error": 1.0556148105156718e-13
+      },
+      {
+        "q_M_inv_s_inv": 10000000000.0,
+        "eta": 0.0008333333333333334,
+        "reference_solver": {
+          "method": "DOP853",
+          "function_evaluations": 1922
+        },
+        "max_absolute_error": 2.7144758981540156e-20,
+        "at_coordinate": 0.0007286181745132274,
+        "analytical_value": 6.729153834613053e-08,
+        "reference_value": 6.729153834610339e-08,
+        "minimum_analytical_value": 3.784364419071886e-12,
+        "maximum_analytical_value": 4.967675745753107e-07,
+        "equivalent_normalized_error": 5.428951796308031e-14
+      }
+    ],
+    "worst_case": {
+      "q_M_inv_s_inv": 1000000000.0,
+      "eta": 8.333333333333333e-05,
+      "reference_solver": {
+        "method": "DOP853",
+        "function_evaluations": 1412
+      },
+      "max_absolute_error": 5.278074052578359e-20,
+      "at_coordinate": 0.0004869675251658631,
+      "analytical_value": 2.576541328548384e-07,
+      "reference_value": 2.576541328548912e-07,
+      "minimum_analytical_value": 1.513648219663378e-11,
+      "maximum_analytical_value": 4.989832353408961e-07,
+      "equivalent_normalized_error": 1.0556148105156718e-13
+    }
+  },
+  "benchmark": null,
+  "notes": [
+    "Observed discrepancies include numerical error in both the analytical evaluator and the independent ODE reference.",
+    "The analytical series tolerance bounds truncation only; it does not bound total floating-point evaluation error.",
+    "Benchmarks measure one process on this machine and vary with hardware and system load.",
+    "This run validates only the interpreter and library versions recorded above, not the entire declared support matrix."
+  ]
+}
