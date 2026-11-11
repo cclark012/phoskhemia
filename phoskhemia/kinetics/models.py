@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
-import scipy as sp
+from phoskhemia.kinetics.analytic import analytic_shape, _controls
 from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.kinetics.parameterizations import simplex_weights_from_unconstrained
 
@@ -130,10 +132,124 @@ class NexponentialModel(KineticModel):
     def parameterization(self):
         return "log"
 
+def _tta_settings(time_unit, tolerance, order):
+    if not isinstance(time_unit, str) or not time_unit.strip():
+        raise ValueError("time_unit must be a nonempty unit label")
+    _controls(tolerance, order)
+
+
+def _tta_input(times, parameters):
+    if np.iscomplexobj(times) or np.iscomplexobj(parameters):
+        raise ValueError("times and kinetic parameters must be real")
+    times = np.asarray(times, dtype=float)
+    parameters = np.asarray(parameters, dtype=float)
+    if times.ndim != 1:
+        raise ValueError("times must have shape (n_times,)")
+    if parameters.shape != (3,):
+        raise ValueError("kinetic parameters must have shape (3,)")
+    if not np.isfinite(parameters).all():
+        raise ValueError("kinetic parameters must be finite")
+    return times, parameters
+
+
+def _tta_basis(times, rate, gamma, eta, tolerance, order):
+    annihilator = analytic_shape(
+        times, rate, gamma, eta, tol=tolerance, order=order
+    )
+    sensitizer = np.exp(-rate * times)
+    return np.column_stack([annihilator, sensitizer])
+
+
+@dataclass(frozen=True)
+class SensitizedTTAModel(KineticModel):
+    """Analytical sensitization and mixed-order triplet decay.
+
+    ``solve(times, [beta, gamma, eta])`` accepts parameters in natural linear
+    space: beta > 0, gamma >= 0, and eta >= 0. It returns columns ``[A, S]``
+    with ``S = exp(-beta*t)`` and ``A = n/(P/beta)`` for the physical equation
+    ``n' = P*exp(-beta*t) - gamma*n - q*n**2``, ``n(0)=0``.
+
+    Here ``eta = q*P/beta**2`` is dimensionless. Physical ``q`` cannot be
+    inferred from eta alone when the concentration and spectral amplitude
+    scales are unknown. Two independent signed spectral amplitudes belong
+    in the global fit, one for each returned column.
+
+    ``time_unit`` labels parameter reports only; it does not convert values.
+    The rates supplied to ``solve`` must use the reciprocal of the time unit
+    of ``times``. ``series_tolerance`` controls analytical truncation only.
+    An optional fixed ``series_order`` must satisfy that tolerance throughout
+    the fitted domain. Unordered, repeated, and singleton time grids work;
+    the initial condition remains at t=0 when a fit omits the early data.
+    """
+
+    time_unit: str = "s"
+    series_tolerance: float = 1e-14
+    series_order: int | None = None
+
+    def __post_init__(self):
+        _tta_settings(self.time_unit, self.series_tolerance, self.series_order)
+
+    def n_params(self):
+        return 3
+
+    def param_names(self):
+        return ["beta", "gamma", "eta"]
+
+    def param_units(self):
+        return [f"{self.time_unit}^-1", f"{self.time_unit}^-1", None]
+
+    def param_descriptions(self):
+        return [
+            "Sensitizer decay rate: k_3S + k_TET*[A]",
+            "First-order annihilator triplet decay rate: k_3A",
+            "Dimensionless annihilation strength: k_2*P/beta^2",
+        ]
+
+    def species_names(self):
+        return ["[³A*]", "[³S*]"]
+
+    def parameterization(self):
+        return "linear"
+
+    def parameter_bounds(self):
+        return (
+            np.array([np.finfo(float).tiny, 0.0, 0.0]),
+            np.full(3, np.inf),
+        )
+
+    def solve(self, times, beta):
+        times, parameters = _tta_input(times, beta)
+        rate, gamma, eta = parameters
+        return _tta_basis(
+            times, rate, gamma, eta, self.series_tolerance, self.series_order
+        )
+
+
+@dataclass(frozen=True)
 class TTAKineticModel(KineticModel):
+    """Analytical TTA evaluator preserving the legacy log-parameter API.
+
+    ``solve(times, log([tau_r, tau_A, k2_effective]))`` returns columns
+    ``[A, S]``. The natural parameters remain strictly positive because the
+    optimizer coordinates are logarithmic. Use :class:`SensitizedTTAModel`
+    when exact zero first-order decay or annihilation must be allowed.
+
+    The normalized annihilator obeys
+    ``A' = exp(-t/tau_r)/tau_r - A/tau_A - k2_effective*A**2``.
+    Consequently, the historical third parameter is an effective inverse-time
+    rate ``k2_effective = physical_k2 * (P/beta)``, where ``beta=1/tau_r``.
+    It is not, by itself, the physical bimolecular coefficient in 1/(M*time).
+
+    The initial condition A(0)=0 is independent of the requested time grid.
+    ``time_unit`` labels reports and does not perform unit conversion.
     """
-    Triplet–triplet annihilation kinetic model.
-    """
+
+    time_unit: str = "s"
+    series_tolerance: float = 1e-14
+    series_order: int | None = None
+
+    def __post_init__(self):
+        _tta_settings(self.time_unit, self.series_tolerance, self.series_order)
 
     def n_params(self):
         return 3
@@ -141,38 +257,28 @@ class TTAKineticModel(KineticModel):
     def param_names(self):
         return ["τᵣ", "τ₃ₐ", "k₂"]
 
+    def param_units(self):
+        return [self.time_unit, self.time_unit, f"{self.time_unit}^-1"]
+
+    def param_descriptions(self):
+        return [
+            "Sensitizer lifetime: 1/(k_3S + k_TET*[A])",
+            "First-order annihilator triplet lifetime: 1/k_3A",
+            "Effective normalized annihilation rate: physical_k_2*(P/beta)",
+        ]
+
     def species_names(self):
         return ["[³A*]", "[³S*]"]
 
     def solve(self, times, beta):
-        tr, t3a, k2 = np.exp(beta)
-        times = np.asarray(times, dtype=float)
-
-        # Sensitizer population
-        C_S = np.exp(-times / tr)
-
-        def rhs(t, y):
-            A = y[0]
-            S = np.exp(-t / tr)
-            dA = (1.0 / tr) * S - (1.0 / t3a) * A - k2 * A * A
-            return [dA]
-
-        sol = sp.integrate.solve_ivp(
-            rhs,
-            (times[0], times[-1]),
-            y0=[0.0],
-            t_eval=times,
-            method="LSODA",
-            rtol=1e-6,
-            atol=1e-9,
+        times, parameters = _tta_input(times, beta)
+        with np.errstate(over="raise", invalid="raise", under="ignore"):
+            rate = np.exp(-parameters[0])
+            gamma = np.exp(-parameters[1])
+            eta = np.exp(parameters[2] + parameters[0])
+        return _tta_basis(
+            times, rate, gamma, eta, self.series_tolerance, self.series_order
         )
-
-        if not sol.success:
-            raise RuntimeError("ODE solver failed")
-
-        C_A = sol.y[0]
-
-        return np.column_stack([C_A, C_S])
 
 class StretchedExponentialModel(KineticModel):
     """
