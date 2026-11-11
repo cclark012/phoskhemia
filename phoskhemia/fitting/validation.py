@@ -4,11 +4,54 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from phoskhemia.fitting.projections import project_amplitudes
+from phoskhemia.fitting.projections import project_spectra
+from phoskhemia.fitting.results import GlobalFitResult
 from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.utils.typing import ArrayFloatAny
 if TYPE_CHECKING:
     from phoskhemia.data.spectrum2d import TransientAbsorption
+
+
+def _validated_data(data, fit):
+    """Require finite observations and predictions on exactly the same grid."""
+    data = np.asarray(data, dtype=float)
+    fit = np.asarray(fit, dtype=float)
+    if data.shape != fit.shape:
+        raise ValueError("data and fit must have the same shape")
+    if data.size == 0:
+        raise ValueError("data and fit must be nonempty")
+    if not np.all(np.isfinite(data)) or not np.all(np.isfinite(fit)):
+        raise ValueError("data and fit must contain only finite values")
+    return data, fit
+
+
+def _validated_noise(noise, shape):
+    """Broadcast positive standard deviations without broadcasting the data."""
+    noise = np.asarray(noise, dtype=float)
+    if not np.all(np.isfinite(noise)) or np.any(noise <= 0):
+        raise ValueError("noise standard deviations must be finite and strictly positive")
+    try:
+        return np.broadcast_to(noise, shape)
+    except ValueError as exc:
+        raise ValueError("noise must be scalar or broadcast to the data shape") from exc
+
+
+def _parameter_count(value):
+    """Allow an explicitly supplied effective parameter count for penalized fits."""
+    count = np.asarray(value, dtype=float)
+    if count.ndim != 0 or not np.isfinite(count) or count < 0:
+        raise ValueError("parameter count must be a finite, nonnegative scalar")
+    return float(count)
+
+
+def _result_cache(result):
+    """Read current results, retaining support for older in-memory result dicts."""
+    if isinstance(result, GlobalFitResult):
+        return result._cache
+    if isinstance(result, dict):
+        return result["_cache"]
+    raise TypeError("fit_result must be a GlobalFitResult or a legacy result dict")
+
 
 def r_squared(
         data: ArrayFloatAny, 
@@ -123,47 +166,45 @@ def lack_of_fit(
 def reduced_chi_square(
         data: ArrayFloatAny,
         fit: ArrayFloatAny,
-        num_variables: int,
+        num_variables: int | float,
         errors: ArrayFloatAny | float | None=None
     ) -> float:
     """
-    Calculates an estimate of the reduced chi-squared, x², goodness 
-    of fit for a provided set of data, fit values, number of variables, 
-    and the measurement error. If the model used to fit the data is nonlinear,
-    this statistic is a rough estimate as the degrees of freedom, K, can be anywhere
-    between 0 and N - 1. If the normalized residuals, Rₙ = [yₙ - f(xₙ, θ)] / σₙ, 
-    are representative of the true model and the residuals are distributed normally, 
-    then the distribution has mean μ = 0 and variance σ² = 1 and x² is the sum of 
-    K variates with probability distribution 
-    P(x²; K) = [1 / 2ᴷ𝄍² ∙ Γ(K / 2)] ∙ (x²)ᴷ𝄍²⁻¹ ∙ e⁻ˣᒾ𝄍² and expectation value 
-    ⟨x²⟩ = ⎰x² ∙ P(x²; K) dx² = K with a variance of 2K. The expectation value 
-    of the reduced x² is then ≈1, with an approximate standard deviation of √2/K.
+    Return ``sum(((data - fit) / errors)**2) / (N - p)``.
 
     Args:
         data (ArrayFloatAny): Array of data values.
-        fit (ArrayFloatAny): Array of fit values.
-        num_variables (int): Number of variables used in the fit.
-        errors (ArrayFloatAny | float | None, optional): Estimated or known 
-            error(s) in data. Defaults to None, in which case the standard 
-            deviation of the residuals is used.
+        fit (ArrayFloatAny): Predictions with exactly the same shape as data.
+        num_variables (int | float): Total fitted parameter count, including
+            projected amplitudes. An effective count can be supplied for a
+            penalized fit, in which case this is an approximate diagnostic.
+        errors (ArrayFloatAny | float | None): Noise standard deviations,
+            either scalar or broadcastable to data. For a time-by-wavelength
+            matrix, a wavelength vector is broadcast over time. If omitted,
+            the residual standard deviation is used for backward compatibility;
+            that self-normalized statistic is not an independent goodness-of-fit
+            check.
 
     Returns:
-        float: Reduced chi-square value.
+        float: Reduced chi-square, or NaN when the degrees of freedom are
+            nonpositive or the inferred residual standard deviation is zero.
+
+    With independent Gaussian errors and a correctly specified locally linear
+    model, the expected reduced chi-square is approximately one, with standard
+    deviation ``sqrt(2 / (N - p))``. Correlated noise and strong constraints
+    invalidate this simple degrees-of-freedom interpretation.
     """
-
-    residuals: ArrayFloatAny = data - fit
-    dof: int = (
-        len(data) - num_variables if np.ndim(data) == 1 
-        else (data.shape[0] * data.shape[1]) - num_variables
-    )
-    sumsq_resids: float = np.sum(np.square(residuals))
-    sumsq_errors: float = (
-        np.sum(np.square(errors)) if errors is not None 
-        else np.sum(np.square(np.std(residuals)))
-    )
-    chi_square: float = (sumsq_resids / sumsq_errors) / dof
-
-    return chi_square
+    data, fit = _validated_data(data, fit)
+    residuals = data - fit
+    dof = data.size - _parameter_count(num_variables)
+    if errors is None:
+        errors = float(np.std(residuals))
+        if errors == 0:
+            return float("nan")
+    sigma = _validated_noise(errors, data.shape)
+    if dof <= 0:
+        return float("nan")
+    return float(np.sum(np.square(residuals / sigma)) / dof)
 
 def bayesian_information_criterion(
         data: ArrayFloatAny,
@@ -179,10 +220,15 @@ def bayesian_information_criterion(
     models of the same data. In the case of model comparison, the smallest
     value is the best model.
 
+    This legacy helper profiles a single unknown common variance and omits
+    likelihood constants. For known, wavelength-dependent noise, use
+    ``compute_diagnostics`` instead; the two conventions are not interchangeable.
+
     Args:
         data (ArrayFloatAny): Array of data values.
         fit (ArrayFloatAny): Array of fit values.
-        num_variables (int): Number of variables used in model fitting.
+        num_variables (int): Total estimated likelihood parameters, including
+            the common variance when that variance is estimated from the data.
 
     Returns:
         float: Bayesian Information Criterion parameter.
@@ -213,10 +259,15 @@ def akaike_information_criterion(
     use cases are similar to the Bayesion information criterion. 
     See bayesian_information_criterion for more information.
 
+    This returns the small-sample-corrected AIC (AICc), profiles a single
+    unknown common variance, and omits likelihood constants. For known,
+    wavelength-dependent noise, use ``compute_diagnostics`` instead.
+
     Args:
         data (ArrayFloatAny): Array of data values.
         fit (ArrayFloatAny): Array of fit values.
-        num_variables (int): Number of variables used in fitting.
+        num_variables (int): Total estimated likelihood parameters, including
+            the common variance when that variance is estimated from the data.
 
     Returns:
         float: Akaike information criterion parameter.
@@ -244,52 +295,44 @@ def compute_diagnostics(
         *,
         y_obs: NDArray[np.floating],
         y_fit: NDArray[np.floating],
-        noise: NDArray[np.floating],
-        n_params: int,
+        noise: NDArray[np.floating] | float,
+        n_params: int | float,
     ) -> dict[str, float]:
     """
-    Compute statistical diagnostics for a global kinetic fit.
+    Compute diagnostics for independent Gaussian errors with known noise.
 
     Parameters
     ----------
-    y_obs : ndarray, shape (N,)
-        Observed flattened data
-    y_fit : ndarray, shape (N,)
-        Fitted flattened data
-    noise : ndarray, shape (N,)
-        Noise standard deviation per point
-    n_params : int
-        Number of nonlinear fitted parameters
+    y_obs, y_fit : ndarray
+        Finite, nonempty observations and predictions with identical shapes.
+    noise : ndarray or float
+        Positive standard deviations, scalar or broadcastable to y_obs.
+    n_params : int or float
+        Total fitted parameter count, including the fitted spectral amplitudes.
+        An effective count may be supplied for ridge regression, but likelihood
+        criteria and reduced chi-square then have only an approximate meaning.
 
     Returns
     -------
     diagnostics : dict
-        {
-            "chi2": float,
-            "chi2_red": float,
-            "R2": float,
-            "AIC": float,
-            "AICc": float,
-            "dof": int,
-        }
+        Chi-square, descriptive R-squared, full Gaussian log likelihood,
+        AIC, AICc, BIC, observation/parameter counts, and residual ``DoF``.
+        Undefined reduced chi-square or small-sample corrections are NaN.
+
+    Notes
+    -----
+    The likelihood includes the normalization ``sum(log(2*pi*noise**2))``.
+    Comparisons require the same observations and compatible likelihood models.
+    The usual AICc expression is a small-sample heuristic for general nonlinear
+    fits. Uncertainty in estimated noise and correlation introduced by smoothing
+    or other preprocessing are not modeled here.
     """
+    y_obs, y_fit = _validated_data(y_obs, y_fit)
+    noise = _validated_noise(noise, y_obs.shape)
 
-    y_obs = np.asarray(y_obs, dtype=float)
-    y_fit = np.asarray(y_fit, dtype=float)
-    noise = np.asarray(noise, dtype=float)
-
-    if y_obs.shape != y_fit.shape:
-        raise ValueError("y_obs and y_fit must have the same shape")
-
-    if noise.shape != y_obs.shape:
-        raise ValueError("noise must match y_obs shape")
-
-    if np.any(noise <= 0):
-        raise ValueError("noise must be strictly positive for diagnostics")
-
-    N: int = y_obs.size
-    p: int = int(n_params)
-    dof: int = max(N - p, 1)
+    N = y_obs.size
+    p = _parameter_count(n_params)
+    dof = N - p
 
     # Residuals
     resid = y_obs - y_fit
@@ -297,21 +340,25 @@ def compute_diagnostics(
 
     # Chi-squared
     chi2: float = float(np.sum(wresid * wresid))
-    chi2_red: float = chi2 / dof
+    chi2_red: float = chi2 / dof if dof > 0 else float("nan")
 
     # R^2 (unweighted, descriptive only)
     ss_res = float(np.sum(resid * resid))
     ss_tot = float(np.sum((y_obs - y_obs.mean()) ** 2))
     R2: float = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
 
-    # Information criteria (Gaussian likelihood)
-    AIC: float = chi2 + 2 * p
+    # Full known-noise Gaussian likelihood; taking logs before squaring avoids
+    # underflow of tiny but representable experimental standard deviations.
+    minus_two_log_likelihood = chi2 + float(
+        np.sum(np.log(2 * np.pi) + 2 * np.log(noise))
+    )
+    AIC: float = minus_two_log_likelihood + 2 * p
     if N > p + 1:
         AICc: float = AIC + (2 * p * (p + 1)) / (N - p - 1)
     else:
         AICc: float = float("nan")
 
-    BIC: float = chi2 + p * np.log(N)
+    BIC: float = minus_two_log_likelihood + p * np.log(N)
 
     return {
         "chi2": chi2,
@@ -321,25 +368,32 @@ def compute_diagnostics(
         "AICc": AICc,
         "BIC": BIC,
         "DoF": dof,
+        "n_obs": N,
+        "n_params": p,
+        "log_likelihood": -0.5 * minus_two_log_likelihood,
     }
 
 def compute_residual_maps(
         arr: TransientAbsorption,
-        fit_result: dict,
+        fit_result: GlobalFitResult | dict,
         *,
-        noise: NDArray[np.floating] | None = None,
-        lam: float = 1e-12,
-    ) -> dict[str, TransientAbsorption]:
+        noise: NDArray[np.floating] | float | None = None,
+        lam: float = 0.0,
+    ) -> dict[str, TransientAbsorption | None]:
     """
-    Compute raw and weighted residual maps for a global kinetic fit.
+    Reproject spectra at fixed fitted kinetics and return residual maps.
+
+    Amplitudes are estimated again from ``arr``, so this supports held-out
+    wavelengths in cross-validation. To subtract the original fitted signal
+    without re-estimating amplitudes, use ``reconstruct_residuals`` instead.
 
     Parameters
     ----------
     arr : TransientAbsorption
         Dataset to evaluate (train or test)
-    fit_result : dict
+    fit_result : GlobalFitResult or dict
         Result returned by fit_global_kinetics
-    noise : ndarray or None
+    noise : ndarray, float or None
         Per-wavelength noise σ(λ)
     lam : float
         Tikhonov regularization strength
@@ -353,22 +407,21 @@ def compute_residual_maps(
         }
     """
 
-    if not isinstance(fit_result, dict):
-        raise TypeError("fit_result must be a dict from fit_global_kinetics")
+    from phoskhemia.data.spectrum2d import TransientAbsorption
 
-    if "_cache" not in fit_result:
-        raise KeyError("fit_result is missing '_cache'")
-
-    cache = fit_result["_cache"]
-    kinetic_model = cache["model"]
+    cache = _result_cache(fit_result)
+    kinetic_model = cache.get("kinetic_model", cache.get("model"))
+    if kinetic_model is None:
+        raise ValueError("fit_result has no cached kinetic model")
     beta = cache["beta"]
 
     data: NDArray[np.floating] = np.asarray(arr, dtype=float)
     times: NDArray[np.floating] = np.asarray(arr.y, dtype=float)
     wl: NDArray[np.floating] = np.asarray(arr.x, dtype=float)
 
-    if data.shape[0] != times.shape[0]:
-        raise ValueError("data and times length mismatch")
+    if data.ndim != 2 or data.shape != (times.size, wl.size):
+        raise ValueError("data must have shape (n_times, n_wavelengths)")
+    _validated_data(data, data)
 
     n_wl: int = data.shape[1]
 
@@ -376,27 +429,18 @@ def compute_residual_maps(
     if noise is None:
         noise = np.ones(n_wl, dtype=float)
     else:
-        noise = np.asarray(noise, dtype=float)
-        if noise.size != n_wl:
-            raise ValueError("noise length must match number of wavelengths")
+        noise = _validated_noise(noise, (n_wl,))
 
     # Solve kinetics for THESE times
     traces: NDArray[np.floating] = kinetic_model.solve(times, beta)
+    traces = np.asarray(traces, dtype=float)
+    if traces.ndim == 1:
+        traces = traces[:, None]
+    if traces.ndim != 2 or traces.shape[0] != times.size:
+        raise ValueError("kinetic traces must have shape (n_times, n_species)")
 
-    fit: NDArray[np.floating] = np.empty_like(data)
-
-    # Re-project amplitudes wavelength-by-wavelength
-    for i in range(n_wl):
-        coeffs: NDArray[np.floating]
-        coeffs, _, _ = project_amplitudes(
-            traces,
-            data[:, i],
-            noise[i],
-            lam,
-        )
-        fit[:, i] = traces @ coeffs
-
-    raw_residuals: NDArray[np.floating] = data - fit
+    projection = project_spectra(traces, data, noise, lam)
+    raw_residuals = projection.residuals
     raw: TransientAbsorption = TransientAbsorption(raw_residuals, x=wl, y=times)
 
     if has_noise:
@@ -416,9 +460,9 @@ def compare_models(results, criterion="AICc"):
 
     Parameters
     ----------
-    results : dict[str, dict]
+    results : dict[str, GlobalFitResult | dict]
         Mapping name -> fit_result
-    criterion : {"AIC", "AICc"}
+    criterion : {"AIC", "AICc", "BIC"}
         The criterion to compare between models
 
     Returns
@@ -427,23 +471,31 @@ def compare_models(results, criterion="AICc"):
         Sorted by best model
     """
 
+    if criterion not in {"AIC", "AICc", "BIC"}:
+        raise ValueError("criterion must be 'AIC', 'AICc', or 'BIC'")
     table = []
     for name, res in results.items():
-        diag = res["diagnostics"]
+        diag = res.diagnostics if isinstance(res, GlobalFitResult) else res["diagnostics"]
         table.append({
             "model": name,
             "AIC": diag["AIC"],
             "AICc": diag["AICc"],
+            "BIC": diag.get("BIC", float("nan")),
             "chi2_red": diag["chi2_red"],
         })
 
     key = criterion
-    table.sort(key=lambda d: d[key])
+    table.sort(key=lambda d: d[key] if np.isfinite(d[key]) else np.inf)
+    if not table:
+        return table
 
-    # Compute ΔAIC
+    # Undefined criteria remain NaN rather than winning a model comparison.
     best = table[0][key]
     for row in table:
-        row[f"Δ{criterion}"] = row[key] - best
+        row[f"Δ{criterion}"] = (
+            row[key] - best if np.isfinite(row[key]) and np.isfinite(best)
+            else float("nan")
+        )
 
     return table
 
@@ -452,10 +504,11 @@ def cross_validate_wavelengths(
         kinetic_model: KineticModel,
         beta0: NDArray[np.floating],
         *,
-        noise: NDArray[np.floating],
+        noise: NDArray[np.floating] | float,
         n_folds: int = 5,
-        lam: float = 1e-12,
+        lam: float = 0.0,
         debug: bool = False,
+        **fit_kwargs,
     ) -> dict:
     """
     Perform wavelength-block cross-validation for a global kinetic model.
@@ -476,6 +529,10 @@ def cross_validate_wavelengths(
         Tikhonov regularization strength
     debug : bool
         Print diagnostics on failures
+    **fit_kwargs
+        Additional options forwarded to ``fit_global_kinetics`` (for example
+        ``solver`` and ``maxit``). Kinetics are learned from training wavelengths;
+        each held-out wavelength still has its own fitted spectral amplitudes.
 
     Returns
     -------
@@ -488,19 +545,21 @@ def cross_validate_wavelengths(
         }
     """
 
+    from phoskhemia.data.spectrum2d import TransientAbsorption
+
     data: NDArray[np.floating] = np.asarray(arr, dtype=float)
     times: NDArray[np.floating] = np.asarray(arr.y, dtype=float)
     wl: NDArray[np.floating] = np.asarray(arr.x, dtype=float)
     beta0: NDArray[np.floating] = np.asarray(beta0, dtype=float)
-    noise: NDArray[np.floating] = np.asarray(noise, dtype=float)
     
     if beta0.size != kinetic_model.n_params():
         raise ValueError("beta0 length mismatch")
 
+    if data.ndim != 2 or data.shape != (times.size, wl.size):
+        raise ValueError("data must have shape (n_times, n_wavelengths)")
+    _validated_data(data, data)
     n_wl: int = data.shape[1]
-
-    if noise.size != n_wl:
-        raise ValueError("noise length must match number of wavelengths")
+    noise = _validated_noise(noise, (n_wl,))
 
     if n_folds < 2 or n_folds > n_wl:
         raise ValueError("invalid number of folds")
@@ -533,34 +592,31 @@ def cross_validate_wavelengths(
         noise_test: NDArray[np.floating] = noise[~train_mask]
 
         # Fit on training wavelengths only
-        fit_res: dict = train.fit_global_kinetics(
+        fit_res = train.fit_global_kinetics(
             kinetic_model,
             beta0,
             noise=noise_train,
             lam=lam,
             propagate_kinetic_uncertainty=False,
             debug=debug,
+            **fit_kwargs,
         )
 
-        # Compute residuals on test wavelengths
-        resid: dict[str, TransientAbsorption] = compute_residual_maps(
-            test,
-            fit_res,
-            noise=noise_test,
-            lam=lam,
-        )
-
-        if resid["weighted"] is None:
-            raise RuntimeError("weighted residuals required for CV")
-
-        weighted_res: NDArray[np.floating] = np.asarray(resid["weighted"])
-
-        N_test: int = weighted_res.size
-        n_params: int = kinetic_model.n_params()
-        dof: int = max(N_test - n_params, 1)
+        cache = _result_cache(fit_res)
+        traces = np.asarray(kinetic_model.solve(times, cache["beta"]), dtype=float)
+        if traces.ndim == 1:
+            traces = traces[:, None]
+        projection = project_spectra(traces, np.asarray(test), noise_test, lam)
+        weighted_res = projection.residuals / noise_test[None, :]
+        N_test = weighted_res.size
+        # Kinetics were learned on the training set. The held-out data determine
+        # only these new spectral amplitudes. The effective count equals rank
+        # times wavelengths for lam=0; reduced chi-square is approximate with a
+        # ridge penalty because shrinkage introduces bias.
+        dof = N_test - projection.effective_parameters
 
         chi2: float = float(np.sum(weighted_res * weighted_res))
-        chi2_red: float = chi2 / dof
+        chi2_red: float = chi2 / dof if dof > 0 else float("nan")
 
         chi2_red_folds.append(chi2_red)
 
@@ -627,6 +683,8 @@ def cv_rank_models(
     rows.sort(key=lambda r: r["score"])
 
     # Compute Δscore and equivalence flag
+    if not rows:
+        return rows
     best_score: float = rows[0]["score"]
     for r in rows:
         r["Δscore"] = r["score"] - best_score
