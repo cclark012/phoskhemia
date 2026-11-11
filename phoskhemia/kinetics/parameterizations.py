@@ -17,7 +17,8 @@ def simplex_weights_from_unconstrained(
           - softmax: k-1 (preferred) or k
           - stick: k-1
     k : int
-        Number of weights desired.
+        Number of weights desired, at least one. A single component has
+        weight one and needs no unconstrained weight parameters.
     method : {"softmax", "stick"}
         Mapping strategy.
 
@@ -28,8 +29,8 @@ def simplex_weights_from_unconstrained(
     """
 
     u = np.asarray(u, dtype=float).reshape(-1)
-    if k < 2:
-        raise ValueError("k must be >= 2")
+    if k < 1:
+        raise ValueError("k must be >= 1")
 
     if method == "softmax":
         if u.size == k:
