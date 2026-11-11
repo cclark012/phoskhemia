@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+from numpy.typing import ArrayLike, NDArray
 
 import numpy as np
 from phoskhemia.kinetics.analytic import analytic_shape, _controls
+from phoskhemia.kinetics.accelerated import analytic_shape_fast
 from phoskhemia.kinetics.base import KineticModel
 from phoskhemia.kinetics.parameterizations import simplex_weights_from_unconstrained
 
@@ -152,10 +155,54 @@ def _tta_input(times, parameters):
     return times, parameters
 
 
-def _tta_basis(times, rate, gamma, eta, tolerance, order):
-    annihilator = analytic_shape(
-        times, rate, gamma, eta, tol=tolerance, order=order
-    )
+def _tta_basis(
+    times: NDArray[np.float64],
+    rate: float,
+    gamma: float,
+    eta: float,
+    tolerance: float,
+    order: int | None,
+    evaluation: Literal["direct", "accelerated"] = "direct",
+    interpolation_tolerance: float = 1e-11,
+) -> NDArray[np.float64]:
+    """Build the sensitizer and annihilator kinetic basis.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64]
+        Nonnegative delays measured in a consistent time unit.
+    rate, gamma : float
+        Sensitizer and annihilator first-order decay rates.
+    eta : float
+        Dimensionless nonlinear annihilation strength.
+    tolerance : float
+        Direct analytical-series truncation tolerance.
+    order : int | None
+        Optional fixed series order.
+    evaluation : Literal["direct", "accelerated"]
+        Direct series evaluation or accelerated interpolation.
+    interpolation_tolerance : float
+        Absolute error target for interpolation validation.
+
+    Returns
+    -------
+    NDArray[np.float64]
+        Two-column kinetic basis, ordered [annihilator, sensitizer].
+    """
+    if evaluation == "accelerated":
+        annihilator = analytic_shape_fast(
+            times, rate, gamma, eta,
+            tol=interpolation_tolerance,
+            order=order,
+        )
+
+    else:
+        annihilator = analytic_shape(
+            times, rate, gamma, eta,
+            tol=tolerance,
+            order=order,
+        )
+
     sensitizer = np.exp(-rate * times)
     return np.column_stack([annihilator, sensitizer])
 
@@ -185,43 +232,68 @@ class SensitizedTTAModel(KineticModel):
     time_unit: str = "s"
     series_tolerance: float = 1e-14
     series_order: int | None = None
+    evaluation: Literal["direct", "accelerated"] = "direct"
+    interpolation_tolerance: float = 1e-11
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         _tta_settings(self.time_unit, self.series_tolerance, self.series_order)
+        if self.evaluation not in ("direct", "accelerated"):
+            raise ValueError("evaluation must be 'direct' or 'accelerated'")
+        _controls(self.interpolation_tolerance, None)
 
-    def n_params(self):
+    def n_params(self) -> int:
         return 3
 
-    def param_names(self):
+    def param_names(self) -> list[str]:
         return ["beta", "gamma", "eta"]
 
-    def param_units(self):
+    def param_units(self) -> list[str | None]:
         return [f"{self.time_unit}^-1", f"{self.time_unit}^-1", None]
 
-    def param_descriptions(self):
+    def param_descriptions(self) -> list[str]:
         return [
             "Sensitizer decay rate: k_3S + k_TET*[A]",
             "First-order annihilator triplet decay rate: k_3A",
             "Dimensionless annihilation strength: k_2*P/beta^2",
         ]
 
-    def species_names(self):
+    def species_names(self) -> list[str]:
         return ["[³A*]", "[³S*]"]
 
-    def parameterization(self):
+    def parameterization(self) -> Literal["linear"]:
         return "linear"
 
-    def parameter_bounds(self):
+    def parameter_bounds(self) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         return (
             np.array([np.finfo(float).tiny, 0.0, 0.0]),
             np.full(3, np.inf),
         )
 
-    def solve(self, times, beta):
+    def solve(
+        self,
+        times: ArrayLike,
+        beta: ArrayLike,
+    ) -> NDArray[np.float64]:
+        """Return the normalized analytical population basis at each time.
+
+        Parameters
+        ----------
+        times : ArrayLike
+            Times measured relative to excitation time zero.
+        beta : ArrayLike
+            Three model parameters [sensitizer decay, annihilator decay, eta].
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Array of shape (n_times, 2): annihilator and sensitizer traces.
+        """
         times, parameters = _tta_input(times, beta)
         rate, gamma, eta = parameters
         return _tta_basis(
-            times, rate, gamma, eta, self.series_tolerance, self.series_order
+            times, rate, gamma, eta,
+            self.series_tolerance, self.series_order,
+            self.evaluation, self.interpolation_tolerance,
         )
 
 
