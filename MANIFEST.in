@@ -1,11 +1,20 @@
 graft phoskhemia
+graft docs
+graft tests
 
-# include small example scripts if you want
+# Include runnable examples and source-distribution documentation.
 graft examples
+include CHANGELOG.md
 
-# never ship scratch scripts
+# Keep local work and generated build products out of the distribution.
 prune scripts
 prune notebooks
 prune .github
+prune build
+prune dist
+prune docs/_build
+prune .pytest_cache
+prune .mypy_cache
+prune .ruff_cache
 
 global-exclude *.pyc *.pyo __pycache__ .DS_Store
