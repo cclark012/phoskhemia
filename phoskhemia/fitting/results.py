@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict, Sequence
+from typing import Any, Literal, NotRequired, TypedDict, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -43,7 +43,7 @@ def cov_delta_lognormal(
 
     beta: NDArray[np.floating] = np.asarray(beta, dtype=float).reshape(-1)
     S: NDArray[np.floating] = np.asarray(cov_beta, dtype=float)
-    if S.shape[0] != S.shape[1] or S.shape[0] != beta.shape[0]:
+    if S.ndim != 2 or S.shape != (beta.size, beta.size):
         raise ValueError("Shape mismatch: beta must be (k,), cov_beta must be (k,k).")
 
     J: NDArray[np.floating] = np.diag(np.exp(beta))
@@ -56,10 +56,10 @@ def cov_lognormal(
     """
     Exact covariance in natural space for p = exp(β) with β ~ 𝒩(μ, Σ).
     
-    Because residuals are usually assumed to follow a normal distribution,
-    parameters fit in log-space follow a log-normal distribution in natural-space.
-    To obtain the covariance values in natural space the log-space covariances 
-    are transformed according to: 
+    Under a multivariate Gaussian approximation in log-parameter space,
+    the natural parameters have a multivariate log-normal distribution.
+    Normal observation errors alone do not guarantee this approximation.
+    The log-space covariances are transformed according to:
     Σ(pᵢ, pⱼ) = exp(μᵢ + μⱼ + ½(Σᵢᵢ + Σⱼⱼ)) ⋅ (exp(Σᵢⱼ) - 1)
     Where Σ(pᵢ, pⱼ) is the covariance of parameters pᵢ with respect to pⱼ.
     μᵢ, μⱼ are the mean values of parameters βᵢ and βⱼ (the log-space values).
@@ -86,7 +86,7 @@ def cov_lognormal(
 
     beta: NDArray[np.floating] = np.asarray(beta, dtype=float).reshape(-1)
     S: NDArray[np.floating] = np.asarray(cov_beta, dtype=float)
-    if S.shape[0] != S.shape[1] or S.shape[0] != beta.shape[0]:
+    if S.ndim != 2 or S.shape != (beta.size, beta.size):
         raise ValueError("Shape mismatch: beta must be (k,), cov_beta must be (k,k).")
 
     diag: NDArray[np.floating] = np.diag(S)
@@ -95,7 +95,7 @@ def cov_lognormal(
         np.exp(beta[:, None] + beta[None, :] 
         + 0.5 * (diag[:, None] + diag[None, :]))
     )
-    cov_p: NDArray[np.floating] = A * (np.exp(S) - 1.0)
+    cov_p: NDArray[np.floating] = A * np.expm1(S)
     return cov_p
 
 
@@ -107,7 +107,7 @@ def sd_lognormal(
 
     s2: NDArray[np.floating] = np.square(sd_beta)
     mean_p: NDArray[np.floating] = np.exp(beta + 0.5*s2)
-    sd_p: NDArray[np.floating] = mean_p * np.sqrt(np.exp(s2) - 1.0)
+    sd_p: NDArray[np.floating] = mean_p * np.sqrt(np.expm1(s2))
     return sd_p
 
 def _fmt_float(x: float, digits: int = 3) -> str:
@@ -715,20 +715,14 @@ def render_latex_report(
 
     def _tex_escape(s: str) -> str:
         """Minimal escaping of characters that break LaTeX in tabular content."""
-        return (
-            s.replace("\\", r"\textbackslash{}")
-            .replace("%", r"\%")
-            .replace("_", r"\_")
-            .replace("&", r"\&")
-            .replace("#", r"\#")
-            .replace("$", r"\$")
-            .replace("{", r"\{")
-            .replace("}", r"\}")
-            .replace("^", r"\^{}")
-            .replace("~", r"\textasciitilde{}")
-            .replace("<", r"\textless{}")
-            .replace(">", r"\textgreater{}")
-        )
+        replacements = {
+            "\\": r"\textbackslash{}", "%": r"\%", "_": r"\_",
+            "&": r"\&", "#": r"\#", "$": r"\$", "{": r"\{",
+            "}": r"\}", "^": r"\^{}", "~": r"\textasciitilde{}",
+            "<": r"\textless{}", ">": r"\textgreater{}",
+        }
+        # One pass: do not escape braces inserted by an earlier replacement.
+        return "".join(replacements.get(char, char) for char in s)
     # Detect non-ASCII content across all block rows and warn once.
     unicode_found: list[str] = []
     for block in blocks:
@@ -790,6 +784,8 @@ def render_latex_report(
 class FitCache(TypedDict):
     lam: float
     noise: NDArray[np.floating]
+    objective_noise: NotRequired[NDArray[np.floating]]
+    absolute_sigma: NotRequired[bool]
     
     kinetic_model: KineticModel
     beta: NDArray[np.floating]
@@ -800,6 +796,11 @@ class FitCache(TypedDict):
 
     traces: NDArray[np.floating]
     solver_info: dict[str, Any]
+    amplitude_rank: NotRequired[int]
+    amplitude_errors_include_kinetics: NotRequired[bool]
+    time_error_model: NotRequired[str]
+    regularized_diagnostics_approximate: NotRequired[bool]
+    likelihood_matches_objective: NotRequired[bool]
 
 
 @dataclass(frozen=True)
@@ -854,9 +855,44 @@ class GlobalFitResult:
             self,
             space: Literal["natural", "log"]="natural",
             method: Literal["exact", "delta", "linear"]="exact"
-        ):
-        """Placeholder for covariances of kinetic parameters."""
-        raise NotImplementedError
+        ) -> NDArray[np.floating] | None:
+        """Return covariance in natural or log parameter coordinates.
+
+        For a log-parameterized model, ``method='exact'`` transforms the
+        assumed Gaussian distribution in log coordinates using its log-normal
+        covariance. ``'delta'`` and ``'linear'`` are equivalent first-order
+        approximations. This does not make a nonlinear fit's Gaussian parameter
+        approximation exact. For a linear-parameterized model, natural-space
+        covariance is already available; a log-space transformation requires
+        positive parameters and the delta/linear method.
+
+        Return ``None`` if the fitter could not estimate covariance. The stored
+        covariance is never modified.
+        """
+        if space not in {"natural", "log"}:
+            raise ValueError("space must be 'natural' or 'log'")
+        if method not in {"exact", "delta", "linear"}:
+            raise ValueError("method must be 'exact', 'delta', or 'linear'")
+        if self.cov_beta is None:
+            return None
+        beta = np.asarray(self.beta, dtype=float).reshape(-1)
+        cov = np.asarray(self.cov_beta, dtype=float)
+        if cov.ndim != 2 or cov.shape != (beta.size, beta.size):
+            raise ValueError("cov_beta must have shape (n_params, n_params)")
+        if self.parameterization == "log":
+            if space == "log":
+                return cov.copy()
+            transform = cov_lognormal if method == "exact" else cov_delta_lognormal
+            return transform(beta, cov)
+        if self.parameterization == "linear":
+            if space == "natural":
+                return cov.copy()
+            if method == "exact":
+                raise ValueError("log covariance for linear parameters requires method='delta'")
+            if np.any(beta <= 0):
+                raise ValueError("log covariance requires strictly positive natural parameters")
+            return cov / beta[:, None] / beta[None, :]
+        raise ValueError("parameterization must be 'log' or 'linear'")
 
     def sample_kinetics(self):
         """Placeholder for Monte-Carlo propagation of beta for confidence bands."""
@@ -866,10 +902,10 @@ class GlobalFitResult:
         """
         Serialize the result to a dict of JSON-compatible Python types.
 
-        Arrays are converted to nested lists. ``cov_beta`` and ``beta``
-        are included only when available.  The kinetic model is represented
-        by its class name; full model serialization is handled separately
-        via ``KineticModel.to_config`` (T0013).
+        Arrays are converted to nested lists. ``beta`` is always included;
+        ``cov_beta`` is included when available. The kinetic model is represented
+        by its class name. This is a report snapshot, not a complete serialized
+        model that can be used to reconstruct a new fit result.
 
         Returns
         -------
@@ -879,6 +915,7 @@ class GlobalFitResult:
         d: dict[str, Any] = {
             "model": type(self.kinetic_model).__name__ if self.kinetic_model is not None else None,
             "parameterization": self.parameterization,
+            "beta": self.beta.tolist(),
             "species": list(self.species),
             "kinetics": dict(self.kinetics),
             "kinetics_ci": (
@@ -897,7 +934,6 @@ class GlobalFitResult:
             "amplitude_errors": self.amplitude_errors.tolist(),
         }
         if self.cov_beta is not None:
-            d["beta"] = self.beta.tolist()
             d["cov_beta"] = self.cov_beta.tolist()
         return d
 
@@ -930,20 +966,31 @@ class GlobalFitResult:
             **kwargs: Any,
         ) -> str:
         """
-        Return the report as a plain-text or LaTeX string.
+        Return the report as a plain-text, terminal, or LaTeX string.
 
         Parameters
         ----------
         style : {'brief', 'technical', 'journal', 'verbose'}
-        fmt : {'plain', 'latex'}
+        fmt : {'plain', 'terminal', 'latex'}
             Output format.  Use ``'latex'`` to get a ``longtable``
             environment suitable for journal SI sections.
         **kwargs
-            Forwarded to ``build_fit_report``.
+            ``caption`` and ``label`` are passed to the LaTeX renderer;
+            ``width`` is passed to the terminal renderer. Remaining options
+            are forwarded to ``build_fit_report``.
         """
+        if fmt not in {"plain", "terminal", "latex"}:
+            raise ValueError("fmt must be 'plain', 'terminal', or 'latex'")
+        renderer_kwargs = {}
+        if fmt == "latex":
+            renderer_kwargs = {
+                key: kwargs.pop(key) for key in ("caption", "label") if key in kwargs
+            }
+        elif fmt == "terminal" and "width" in kwargs:
+            renderer_kwargs["width"] = kwargs.pop("width")
         blocks = build_fit_report(self, style=style, **kwargs)
         if fmt == "latex":
-            return render_latex_report(blocks, **{
-                k: kwargs[k] for k in ("caption", "label") if k in kwargs
-            })
+            return render_latex_report(blocks, **renderer_kwargs)
+        if fmt == "terminal":
+            return render_terminal_report(blocks, **renderer_kwargs)
         return render_plain_report(blocks)
