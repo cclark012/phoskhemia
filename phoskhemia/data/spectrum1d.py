@@ -7,7 +7,7 @@ from typing import Any, Iterable, Mapping
 import numpy as np
 from numpy.typing import NDArray
 
-from phoskhemia.data.meta import MetaDict
+from phoskhemia.data.meta import MetaDict, meta_copy_update
 
 _SPLIT_RE = re.compile(r"[\t,\s]+")  # tabs, commas, whitespace
 _FLOAT_RE = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\Z")
@@ -156,7 +156,7 @@ class Spectrum1D(np.ndarray):
         if obj.ndim != 1:
             raise ValueError(f"{cls.__name__} expects a 1D array; got shape {obj.shape}.")
 
-        x_arr = np.arange(obj.shape[0], dtype=float) if x is None else np.asarray(x, dtype=float).reshape(-1)
+        x_arr = np.arange(obj.shape[0], dtype=float) if x is None else np.array(x, dtype=float, copy=True).reshape(-1)
         if x_arr.shape[0] != obj.shape[0]:
             raise ValueError(f"x must have length {obj.shape[0]} (got {x_arr.shape[0]}).")
 
@@ -167,7 +167,7 @@ class Spectrum1D(np.ndarray):
                 pass
 
         object.__setattr__(obj, "x", x_arr)
-        object.__setattr__(obj, "meta", MetaDict.coerce(meta or {}))
+        object.__setattr__(obj, "meta", meta_copy_update(meta))
         object.__setattr__(obj, "freeze_axis", bool(freeze_axis))
         return obj
 
