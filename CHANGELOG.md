@@ -8,6 +8,82 @@ Changes before and including 0.1.6 were not well documented other than with git 
 
 Everything is subject to change, so I cannot guarantee that all functions and modules will act the same in the future.
 
+## Unreleased — analytical TTA and fitting correctness
+
+Based on the user-supplied archive for commit
+`052add8340f7fb4a122ed6c8f48c6acaff8cb6f6`. The source version stays 0.1.6;
+these changes have not been published as a release.
+
+### Added
+
+- Analytical normalized and dimensional triplet-population evaluators, with
+  controlled positive-series truncation and no production ODE integration.
+- `SensitizedTTAModel` using natural `[beta, gamma, eta]` parameters and
+  `[annihilator, sensitizer]` basis columns.
+- An optimizer-coordinate `KineticModel.parameter_bounds()` hook.
+- Bounded SciPy least-squares global fitting, fixed kinetic parameters, and
+  rank-aware local covariance calculations.
+- Signed, shared-SVD spectral projection and a seeded global-fitting example.
+- Regression tests, model/fitting documentation, a prioritized repository
+  review, and a Python 3.13/3.14 CI configuration.
+- An optional `io` dependency group for MATLAB v7.3's `h5py` reader.
+
+### Changed defaults and compatibility
+
+- Global fitting defaults to `solver="least_squares"`, `use_noise_as_sy=True`,
+  and `lam=0.0`. A noise scalar/vector is used in the nonlinear objective.
+- `solver="auto"` consistently selects least squares, independent of installed
+  optional packages. Global ODRPACK usage now explicitly selects fixed-time OLS.
+- `sx` and scope-uncertainty arguments raise an explicit unsupported-operation
+  error for global variable projection. The previous callback ignored adjusted
+  timestamps, so its apparent errors-in-time support was not reliable.
+- `TTAKineticModel` retains log-lifetime/effective-rate coordinates but uses the
+  analytical evaluator and anchors its initial condition at physical t=0.
+- New TTA models reject negative/pretrigger times. Time units are explicit
+  labels and must be converted by the caller along with rate values.
+- Shape-changing NumPy operations and scalar/vector selections return ordinary
+  arrays/scalars when the TA coordinate interpretation would otherwise be invalid.
+- Trim includes its nearest selected endpoints and validates actual bounds.
+- Default logarithmic downsampling now chooses the same observations after a
+  consistent change of time units.
+- Unsupported partial-overlap combination grids raise clear errors. Identical
+  irregular grids remain supported. Historical `ta1 + ta2` averaging is retained.
+
+### Corrected
+
+- The long-time Bessel overflow/cancellation failure of direct formula evaluation.
+- Legacy TTA dependence on the first requested sample and sorted integration grid.
+- Normal-equation amplitude projection and rank-deficient covariance crashes.
+- Reduced chi-square's per-observation weighting and total fitted parameter count.
+- AIC/BIC likelihood normalization, covariance scaling, and report/result consumers.
+- The mismatch between inner ridge projection and the outer objective.
+- Suppressed model exceptions; failed fits no longer receive kinetic intervals.
+- Coordinate-dependent noise/probe metadata after slicing, trimming, supported
+  means, and combination. Unsupported uncertainty transformations remove stale
+  metadata with a reason rather than preserving the first input's sigma.
+- Recursive NumPy dispatch, caller-owned axis mutation/freezing, and a missing
+  lazy data export.
+- The one-component exponential/simplex case.
+- Time-zero output length mismatch and the IRF helper's `hstack` call.
+- The setuptools minimum needed by the declared PEP 621 project metadata.
+
+### Remaining limits
+
+This is a prototype update. It does not supply a calibrated IRF model, general
+uncertainty propagation for arbitrary array arithmetic, complete model
+serialization, or independent calibration of the initial triplet concentration.
+The simulator's automatic pump-excitation approximation needs a separate
+physical correction before it is used to infer absolute q/k2. See
+[docs/repository-review.md](docs/repository-review.md).
+
+Local validation used Python 3.12.14 with NumPy 2.3.5 and SciPy 1.17.0. The
+project's declared Python >=3.13 support matrix and real optional ODR backend
+still need execution in their corresponding environments.
+
+---
+
+Previous project entries are retained below as supplied.
+
 ## [0.1.6] - [Unreleased]
 
 ### Added
