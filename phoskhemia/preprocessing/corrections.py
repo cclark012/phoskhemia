@@ -268,30 +268,51 @@ def find_time_zero(
             Defaults to 0.
 
     Returns:
-        tuple[np.typing.ArrayLike, np.typing.ArrayLike]: The truncated/extended 
-            time axis and shifted data array.
+        tuple[np.typing.ArrayLike, np.typing.ArrayLike]: The retained time axis,
+            shifted to start at zero, and the matching rows of the data array.
+
+    Notes:
+        This is a legacy spline/inflection heuristic, not a calibrated IRF fit.
+        Its smoothing window uses 50 samples on each side of nominal zero; the
+        derivative search is limited to +/-20 in the supplied time units. The
+        caller must choose time units and sampling appropriate to those fixed
+        windows. The selected time zero is rounded to a measured sample.
     """
 
-    # Constants to choose how wide of a window to use for general smoothing and
-    # final time zero estimation. Uses that number of indices on either 
-    # side (positive and negative) of the originally notated time zero.
+    original_times = np.asarray(original_times, dtype=float)
+    original_data = np.asarray(original_data, dtype=float)
+    if (
+        original_times.ndim != 1 or original_data.ndim != 2
+        or original_data.shape[0] != original_times.size
+        or original_data.shape[1] == 0
+    ):
+        raise ValueError("Expected a time vector and a (n_times, n_wavelengths) data array")
+    if (
+        not np.isfinite(original_times).all() or not np.isfinite(original_data).all()
+        or np.any(np.diff(original_times) <= 0)
+    ):
+        raise ValueError("Times must be finite and strictly increasing; data must be finite")
+    if original_times.size < 5:
+        raise ValueError("At least five time samples are needed for the smoothing spline")
+
+    # Preserve the legacy heuristic: 50 samples either side for smoothing and
+    # a derivative search within +/-20 of nominal zero in the supplied units.
     SMOOTH_RANGE: int = 50
     TRUNC_RANGE: int = 20
-
-    time_zero: int = np.argmin(np.abs(original_times))
-    time_range: ArrayFloatAny = original_times[
-        time_zero - SMOOTH_RANGE:time_zero + SMOOTH_RANGE
-    ]
-
-    truncated_window: ArrayFloatAny = time_range[
-        np.logical_and(time_range >= -TRUNC_RANGE, time_range <= TRUNC_RANGE)
-    ]
+    time_zero = int(np.argmin(np.abs(original_times)))
+    window_start = max(0, time_zero - SMOOTH_RANGE)
+    window_stop = min(original_times.size, time_zero + SMOOTH_RANGE)
+    time_range = original_times[window_start:window_stop]
+    search_mask = (time_range >= -TRUNC_RANGE) & (time_range <= TRUNC_RANGE)
+    truncated_window = time_range[search_mask]
+    if time_range.size < 5 or truncated_window.size == 0:
+        raise ValueError("Too few samples near nominal time zero for the spline search")
     new_time_zeros: list[float] = []
 
     # Determine inflection point for each wavelength.
     for i in range(0, len(original_data[0, :])):
         original_series: ArrayFloatAny = original_data[
-            time_zero - SMOOTH_RANGE:time_zero + SMOOTH_RANGE, i
+            window_start:window_stop, i
         ]
 
         # Make smoothing spline for first and second derivatives.
@@ -323,43 +344,34 @@ def find_time_zero(
         new_time_zeros += [truncated_window[closer_to_zero]]
         print(truncated_window[closer_to_zero]) if printing == 2 else None
 
-    # Use the median value of the obtained time zeros to shift the array.
-    time_zero_ns: float = np.median(new_time_zeros)
-    delta_t: float = np.unique(original_times[1:] - original_times[:-1])[0]
+    # Both outputs must describe the same retained observations. Selecting the
+    # nearest measured start avoids rounding/floor-division errors in a shift.
+    estimated_t0 = float(np.median(new_time_zeros))
+    start_index = int(np.argmin(np.abs(original_times - estimated_t0)))
+    data = original_data[start_index:, :]
+    times = original_times[start_index:] - original_times[start_index]
+    shift_value = start_index - time_zero
 
-    # Shift array values, but leave time axis where it is.
-    shift_value: int = int(time_zero_ns // delta_t)
-    data: ArrayFloatAny = original_data[time_zero + shift_value:, :]
-
-    # Truncate or extend the time axis.
-    if shift_value >= 0:
-        times: ArrayFloatAny = original_times[time_zero:len(original_data[:, 0])]
-
-    else:
-        times: ArrayFloatAny = np.arange(0, len(data[:, 0]) * delta_t, delta_t)
-
-    # Tell user how the data was adjusted if printing enabled.
-    if printing == 1 or printing == 2:
-        print(f"Median = {time_zero_ns} ns. ", end='')
-        if shift_value > 0:
-            print(f"Data shifted backward by {shift_value * delta_t} ns.")
-
-        elif shift_value < 0:
-            print(f"Data shifted forward by {np.abs(shift_value) * delta_t} ns.")
-
-        elif shift_value == 0:
-            print("Data was not shifted.")
-
-        else:
-            print("Something went wrong. Check the data output.")
+    if printing in (1, 2):
+        print(f"Median time zero = {estimated_t0:g} in the supplied time units. ", end='')
+        print(f"Retained data from sample {start_index} ({shift_value:+d} samples from nominal zero).")
 
     return times, data
 
 def estimate_irf(array: ArrayFloatAny) -> ArrayFloatAny:
-    # Get an optimal size for the Fourier transform, 
+    """Apply the legacy Fourier-derivative/deconvolution IRF heuristic.
+
+    Input is a finite one-dimensional signal sampled at equal intervals. This
+    routine has no time axis, calibration, or fitted physical IRF model; its
+    output is indexed in samples. The deconvolution tail must start nonzero.
+    """
+    array = np.asarray(array, dtype=float)
+    if array.ndim != 1 or array.size < 4 or not np.isfinite(array).all():
+        raise ValueError("estimate_irf requires a finite 1D signal with at least four samples")
+    # Get an optimal size for the Fourier transform,
     # then make a periodic signal from the input array for FFT.
     shape: int = sp.fft.next_fast_len(2 * len(array))
-    arr_stack: ArrayFloatAny = np.hstack(array, np.flip(array))
+    arr_stack: ArrayFloatAny = np.hstack((array, np.flip(array)))
     farray: ArrayFloatAny = sp.fft.fft(arr_stack, shape)
 
     # Define Fourier coordinate for the derivative.
@@ -390,6 +402,8 @@ def estimate_irf(array: ArrayFloatAny) -> ArrayFloatAny:
     # Deconvolve spectrum and IRF.
     irf: ArrayFloatAny
     remainder: ArrayFloatAny
+    if array[cutting_point] == 0:
+        raise ValueError("The estimated deconvolution tail starts at zero; this IRF heuristic cannot be applied")
     irf, remainder = sp.signal.deconvolve(array, array[cutting_point:])
 
     return irf
